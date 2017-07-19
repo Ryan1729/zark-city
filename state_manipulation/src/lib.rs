@@ -65,6 +65,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.polys.clear();
                 add_random_poly(state);
             }
+            Event::KeyDown(Keycode::V) => {
+                (p.set_verts)(get_vert_vecs());
+            }
             Event::KeyDown(Keycode::Up) => {
                 state.cam_y += 0.0625;
             }
@@ -156,7 +159,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let matrix = mat4x4_mul(&world_matrix, &view);
 
-        (p.draw_poly_with_matrix)(matrix, poly.index);
+        // (p.draw_poly_with_matrix)(matrix, poly.index);
+        (p.draw_textured_poly_with_matrix)(matrix, poly.index, 0);
     }
 
 
@@ -218,25 +222,10 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
         ],
         // star hexagon
         vec![
-            0.267355, 0.153145,
-            0.158858, 0.062321,
-            0.357493, -0.060252,
-            0.266305, -0.154964,
-            0.133401, -0.106415,
-            0.126567, -0.339724,
-            -0.001050, -0.308109,
-            -0.025457, -0.168736,
-            -0.230926, -0.279472,
-            -0.267355, -0.153145,
-            -0.158858, -0.062321,
-            -0.357493, 0.060252,
-            -0.266305, 0.154964,
-            -0.133401, 0.106415,
-            -0.126567, 0.339724,
-            0.001050, 0.308109,
-            0.025457, 0.168736,
-            0.230926, 0.279472,
-            0.267355, 0.153145,
+            -0.736842105, 1.0,
+            -0.736842105, -1.0,
+            0.736842105, -1.0,
+            0.736842105, 1.0,
         ],
         //hexagon
         vec![

@@ -658,12 +658,15 @@ struct TextureShader {
     texture_index_uniform: gl::types::GLsizei,
 }
 
+//calculating the uvs here might be slower than passing them in.
+//Then again, maybe this is faster because of better meory badwidth.
+//We'll profile if it becomes a problem.
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
-        texcoord = position * vec2(-0.5) + vec2(0.5);
+        texcoord = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
