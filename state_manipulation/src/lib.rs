@@ -6,6 +6,8 @@ use common::Projection::*;
 
 use rand::{StdRng, SeedableRng, Rng};
 
+use std::f32::consts;
+
 #[cfg(debug_assertions)]
 #[no_mangle]
 pub fn new_state() -> State {
@@ -139,12 +141,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     for poly in state.polys.iter() {
         let world_matrix = [
-            1.0,
+            f32::cos(std::f32::consts::FRAC_PI_2),
+            f32::sin(std::f32::consts::FRAC_PI_2),
             0.0,
             0.0,
-            0.0,
-            0.0,
-            1.0,
+            f32::sin(std::f32::consts::FRAC_PI_2),
+            f32::cos(std::f32::consts::FRAC_PI_2),
             0.0,
             0.0,
             0.0,
