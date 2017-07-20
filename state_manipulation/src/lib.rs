@@ -142,13 +142,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     for (grid_coords, card) in state.board.iter() {
         let (x, y) = to_world_coords(*grid_coords);
 
+        let angle = if (grid_coords.0 + grid_coords.1) % 2 == 0 {
+            std::f32::consts::FRAC_PI_2
+        } else {
+            0.0
+        };
+
         let world_matrix = [
-            f32::cos(std::f32::consts::FRAC_PI_2),
-            -f32::sin(std::f32::consts::FRAC_PI_2),
+            f32::cos(angle),
+            -f32::sin(angle),
             0.0,
             0.0,
-            f32::sin(std::f32::consts::FRAC_PI_2),
-            f32::cos(std::f32::consts::FRAC_PI_2),
+            f32::sin(angle),
+            f32::cos(angle),
             0.0,
             0.0,
             0.0,
