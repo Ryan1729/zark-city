@@ -191,12 +191,11 @@ impl Resources {
             let texture_uniforms = unsafe {
                 [
                     ctx.GetUniformLocation(program, CString::new("textures[0]").unwrap().as_ptr()),
-                    ctx.GetUniformLocation(program, CString::new("textures[1]").unwrap().as_ptr()),
                 ]
             };
 
-            let texture_index_uniform = unsafe {
-                ctx.GetUniformLocation(program, CString::new("texture_index").unwrap().as_ptr())
+            let texture_xy_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("texture_xy").unwrap().as_ptr())
             };
 
             TextureShader {
@@ -204,7 +203,7 @@ impl Resources {
                 pos_attr,
                 matrix_uniform,
                 texture_uniforms,
-                texture_index_uniform,
+                texture_xy_uniform,
             }
         };
 
@@ -458,7 +457,12 @@ fn draw_poly(x: f32, y: f32, index: usize) {
     draw_poly_with_matrix(world_matrix, index);
 }
 
-fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_index: gl::types::GLint) {
+fn draw_textured_poly(
+    x: f32,
+    y: f32,
+    poly_index: usize,
+    texture_xy: (gl::types::GLfloat, gl::types::GLfloat),
+) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -481,18 +485,18 @@ fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_index: gl::type
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_index);
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_xy);
 }
 
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
-    texture_index: gl::types::GLint,
+    (texture_x, texture_y): (gl::types::GLfloat, gl::types::GLfloat),
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UniformMatrix4fv(
-                resources.colour_shader.matrix_uniform as _,
+                resources.texture_shader.matrix_uniform as _,
                 1,
                 gl::FALSE,
                 world_matrix.as_ptr() as _,
@@ -508,7 +512,8 @@ fn draw_textured_poly_with_matrix(
             resources.vertex_buffer,
             &resources.texture_shader,
             &resources.textures,
-            texture_index,
+            texture_x,
+            texture_y,
         );
     }
 }
@@ -585,7 +590,8 @@ fn draw_verts_with_texture(
     vertex_buffer: gl::types::GLuint,
     texture_shader: &TextureShader,
     textures: &Textures,
-    texture_index: gl::types::GLint,
+    texture_x: gl::types::GLfloat,
+    texture_y: gl::types::GLfloat,
 ) {
     unsafe {
         ctx.UseProgram(texture_shader.program);
@@ -605,10 +611,6 @@ fn draw_verts_with_texture(
         ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
         ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
 
-        ctx.ActiveTexture(gl::TEXTURE1);
-        ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
-        ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
-
         ctx.Clear(gl::STENCIL_BUFFER_BIT);
 
         ctx.Enable(gl::STENCIL_TEST);
@@ -616,7 +618,7 @@ fn draw_verts_with_texture(
         ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
         ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
 
-        ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
+        ctx.Uniform2f(texture_shader.texture_xy_uniform, texture_x, texture_y);
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
@@ -654,34 +656,29 @@ struct TextureShader {
     program: gl::types::GLuint,
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
-    texture_uniforms: [gl::types::GLsizei; 2],
-    texture_index_uniform: gl::types::GLsizei,
+    texture_uniforms: [gl::types::GLsizei; 1],
+    texture_xy_uniform: gl::types::GLsizei,
 }
 
 //calculating the uvs here might be slower than passing them in.
-//Then again, maybe this is faster because of better meory badwidth.
+//Then again, maybe this is faster because of better memory badwidth.
 //We'll profile if it becomes a problem.
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
+    uniform vec2 texture_xy;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
-        texcoord = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
+        vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
+        texcoord = corner * vec2(1.0 / 13.0, 1.0 / 13.0) + texture_xy;
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
-//using a spritesheet and calulationg uvs is apparently the optimized way,
-//but this will do for now.
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform sampler2D textures[2];\n\
-    uniform int texture_index;\n\
+    uniform sampler2D textures[1];\n\
     varying vec2 texcoord;\n\
     void main() {\n\
-        if (texture_index == 1) {
-            gl_FragColor = texture2D(textures[1], texcoord);\n\
-        } else {
             gl_FragColor = texture2D(textures[0], texcoord);\n\
-        }
     }";
 
 

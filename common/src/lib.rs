@@ -1,28 +1,211 @@
 extern crate rand;
 
-use rand::StdRng;
+use rand::{StdRng, Rand, Rng};
+
+use std::fmt;
+pub use std::collections::HashMap;
 
 pub struct Platform {
     pub draw_poly: fn(f32, f32, usize),
     pub draw_poly_with_matrix: fn([f32; 16], usize),
-    pub draw_textured_poly: fn(f32, f32, usize, i32),
-    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, i32),
+    pub draw_textured_poly: fn(f32, f32, usize, (f32, f32)),
+    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, (f32, f32)),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
 pub struct State {
     pub rng: StdRng,
-    pub polys: Vec<Polygon>,
     pub cam_x: f32,
     pub cam_y: f32,
     pub zoom: f32,
+    pub board: HashMap<(i8, i8), Card>,
 }
 
-pub struct Polygon {
-    pub x: f32,
-    pub y: f32,
-    pub index: usize,
-    pub scale: f32,
+pub trait AllValues {
+    fn all_values() -> Vec<Self>
+    where
+        Self: std::marker::Sized;
+}
+
+macro_rules! all_values_rand_impl {
+    ($($t:ty)*) => ($(
+        impl Rand for $t {
+            fn rand<R: Rng>(rng: &mut R) -> Self {
+                let values = Self::all_values();
+
+                let len = values.len();
+
+                if len == 0 {
+                    panic!("Cannot pick a random value because T::all_values()\
+ returned an empty vector!")
+                } else {
+                    let i = rng.gen_range(0, len);
+
+                    values[i]
+                }
+            }
+        }
+    )*)
+}
+
+#[derive(Clone, Copy)]
+pub struct Card {
+    pub suit: Suit,
+    pub value: Value,
+}
+
+impl AllValues for Card {
+    fn all_values() -> Vec<Card> {
+        let mut deck = Vec::new();
+
+        for &suit in Suit::all_values().iter() {
+            for &value in Value::all_values().iter() {
+                deck.push(Card {
+                    suit: suit,
+                    value: value,
+                });
+            }
+        }
+
+        deck
+    }
+}
+
+all_values_rand_impl!(Card);
+
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} of {}", self.value, self.suit)
+    }
+}
+
+impl Card {
+    pub fn texture_xy(&self) -> (f32, f32) {
+        (f32::from(self.value) / 13.0, f32::from(self.suit) / 4.0)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Suit {
+    Clubs,
+    Diamonds,
+    Hearts,
+    Spades,
+}
+use Suit::*;
+
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match *self {
+                Clubs => "♣".to_string(),
+                Diamonds => "♦".to_string(),
+                Hearts => "♥".to_string(),
+                Spades => "♠".to_string(),
+            }
+        )
+    }
+}
+
+impl AllValues for Suit {
+    fn all_values() -> Vec<Suit> {
+        vec![Clubs, Diamonds, Hearts, Spades]
+    }
+}
+
+impl From<Suit> for f32 {
+    fn from(suit: Suit) -> Self {
+        match suit {
+            Clubs => 0.0,
+            Diamonds => 1.0,
+            Hearts => 2.0,
+            Spades => 3.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Value {
+    Ace,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    Ten,
+    Jack,
+    Queen,
+    King,
+}
+use Value::*;
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match *self {
+                Ace => "A".to_string(),
+                Two => "2".to_string(),
+                Three => "3".to_string(),
+                Four => "4".to_string(),
+                Five => "5".to_string(),
+                Six => "6".to_string(),
+                Seven => "7".to_string(),
+                Eight => "8".to_string(),
+                Nine => "9".to_string(),
+                Ten => "10".to_string(),
+                Jack => "J".to_string(),
+                Queen => "Q".to_string(),
+                King => "K".to_string(),
+            }
+        )
+    }
+}
+
+impl AllValues for Value {
+    fn all_values() -> Vec<Value> {
+        vec![
+            Ace,
+            Two,
+            Three,
+            Four,
+            Five,
+            Six,
+            Seven,
+            Eight,
+            Nine,
+            Ten,
+            Jack,
+            Queen,
+            King,
+        ]
+    }
+}
+
+impl From<Value> for f32 {
+    fn from(value: Value) -> Self {
+        match value {
+            Ace => 1.0,
+            Two => 2.0,
+            Three => 3.0,
+            Four => 4.0,
+            Five => 5.0,
+            Six => 6.0,
+            Seven => 7.0,
+            Eight => 8.0,
+            Nine => 9.0,
+            Ten => 10.0,
+            Jack => 11.0,
+            Queen => 12.0,
+            King => 13.0,
+        }
+    }
 }
 
 #[derive(Debug)]
