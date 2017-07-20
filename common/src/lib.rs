@@ -8,8 +8,8 @@ pub use std::collections::HashMap;
 pub struct Platform {
     pub draw_poly: fn(f32, f32, usize),
     pub draw_poly_with_matrix: fn([f32; 16], usize),
-    pub draw_textured_poly: fn(f32, f32, usize, (f32, f32)),
-    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, (f32, f32)),
+    pub draw_textured_poly: fn(f32, f32, usize, (f32, f32, i32)),
+    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, (f32, f32, i32)),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
@@ -80,8 +80,16 @@ impl fmt::Display for Card {
 }
 
 impl Card {
-    pub fn texture_xy(&self) -> (f32, f32) {
-        (f32::from(self.value) / 13.0, f32::from(self.suit) / 4.0)
+    pub fn texture_coords(&self) -> (f32, f32, i32) {
+        let mut x = f32::from(self.value);
+        let mut texture_index = 0;
+
+        if x >= 7.0 {
+            x -= 7.0;
+            texture_index = 1;
+        }
+
+        (x / 7.0, f32::from(self.suit) / 5.0, texture_index)
     }
 }
 
@@ -191,19 +199,19 @@ impl AllValues for Value {
 impl From<Value> for f32 {
     fn from(value: Value) -> Self {
         match value {
-            Ace => 1.0,
-            Two => 2.0,
-            Three => 3.0,
-            Four => 4.0,
-            Five => 5.0,
-            Six => 6.0,
-            Seven => 7.0,
-            Eight => 8.0,
-            Nine => 9.0,
-            Ten => 10.0,
-            Jack => 11.0,
-            Queen => 12.0,
-            King => 13.0,
+            Ace => 0.0,
+            Two => 1.0,
+            Three => 2.0,
+            Four => 3.0,
+            Five => 4.0,
+            Six => 5.0,
+            Seven => 6.0,
+            Eight => 7.0,
+            Nine => 8.0,
+            Ten => 9.0,
+            Jack => 10.0,
+            Queen => 11.0,
+            King => 12.0,
         }
     }
 }

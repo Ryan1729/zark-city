@@ -169,9 +169,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let matrix = mat4x4_mul(&world_matrix, &view);
 
-        (p.draw_textured_poly_with_matrix)(matrix, CARD_INDEX, card.texture_xy());
+        (p.draw_textured_poly_with_matrix)(matrix, CARD_INDEX, card.texture_coords());
     }
-
 
     false
 }

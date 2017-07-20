@@ -191,11 +191,16 @@ impl Resources {
             let texture_uniforms = unsafe {
                 [
                     ctx.GetUniformLocation(program, CString::new("textures[0]").unwrap().as_ptr()),
+                    ctx.GetUniformLocation(program, CString::new("textures[1]").unwrap().as_ptr()),
                 ]
             };
 
             let texture_xy_uniform = unsafe {
                 ctx.GetUniformLocation(program, CString::new("texture_xy").unwrap().as_ptr())
+            };
+
+            let texture_index_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("texture_index").unwrap().as_ptr())
             };
 
             TextureShader {
@@ -204,6 +209,7 @@ impl Resources {
                 matrix_uniform,
                 texture_uniforms,
                 texture_xy_uniform,
+                texture_index_uniform,
             }
         };
 
@@ -212,8 +218,8 @@ impl Resources {
         }
 
         let textures = [
-            make_texture_from_png(&ctx, "images/cardBack_blue.png"),
-            make_texture_from_png(&ctx, "images/cardBack_green.png"),
+            make_texture_from_png(&ctx, "images/texture0.png"),
+            make_texture_from_png(&ctx, "images/texture1.png"),
         ];
 
         let mut result = Resources {
@@ -461,7 +467,7 @@ fn draw_textured_poly(
     x: f32,
     y: f32,
     poly_index: usize,
-    texture_xy: (gl::types::GLfloat, gl::types::GLfloat),
+    texture_coords: (gl::types::GLfloat, gl::types::GLfloat, gl::types::GLint),
 ) {
     let mut world_matrix: [f32; 16] = [
         1.0,
@@ -485,13 +491,15 @@ fn draw_textured_poly(
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_xy);
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_coords);
 }
 
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
-    (texture_x, texture_y): (gl::types::GLfloat, gl::types::GLfloat),
+    (texture_x, texture_y, texture_index): (gl::types::GLfloat,
+                                            gl::types::GLfloat,
+                                            gl::types::GLint),
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
@@ -514,6 +522,7 @@ fn draw_textured_poly_with_matrix(
             &resources.textures,
             texture_x,
             texture_y,
+            texture_index,
         );
     }
 }
@@ -592,6 +601,7 @@ fn draw_verts_with_texture(
     textures: &Textures,
     texture_x: gl::types::GLfloat,
     texture_y: gl::types::GLfloat,
+    texture_index: gl::types::GLint,
 ) {
     unsafe {
         ctx.UseProgram(texture_shader.program);
@@ -610,6 +620,12 @@ fn draw_verts_with_texture(
         ctx.ActiveTexture(gl::TEXTURE0);
         ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
         ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
+
+        ctx.ActiveTexture(gl::TEXTURE1);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
+        ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
+
+        ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
 
         ctx.Clear(gl::STENCIL_BUFFER_BIT);
 
@@ -656,8 +672,9 @@ struct TextureShader {
     program: gl::types::GLuint,
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
-    texture_uniforms: [gl::types::GLsizei; 1],
+    texture_uniforms: [gl::types::GLsizei; 2],
     texture_xy_uniform: gl::types::GLsizei,
+    texture_index_uniform: gl::types::GLsizei,
 }
 
 //calculating the uvs here might be slower than passing them in.
@@ -670,15 +687,20 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     varying vec2 texcoord;\n\
     void main() {\n\
         vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
-        texcoord = corner * vec2(1.0 / 13.0, 1.0 / 13.0) + texture_xy;
+        texcoord = corner * vec2(1.0 / 7.0, 1.0 / 5.0) + texture_xy;
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform sampler2D textures[1];\n\
+    uniform sampler2D textures[2];\n\
+    uniform int texture_index;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
+        if (texture_index == 1) {
+            gl_FragColor = texture2D(textures[1], texcoord);\n\
+        } else {
             gl_FragColor = texture2D(textures[0], texcoord);\n\
+        }
     }";
 
 
@@ -822,9 +844,6 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                 return 0;
             }
         }
-
-
-
     }
     return texture;
 }
