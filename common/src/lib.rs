@@ -89,7 +89,11 @@ impl Card {
             texture_index = 1;
         }
 
-        (x / 7.0, f32::from(self.suit) / 5.0, texture_index)
+        (
+            x * 140.0 / 1024.0,
+            f32::from(self.suit) * 190.0 / 1024.0,
+            texture_index,
+        )
     }
 }
 

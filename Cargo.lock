@@ -110,6 +110,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "image_decoding"
+version = "0.1.0"
+dependencies = [
+ "image 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "inflate"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,7 +169,7 @@ name = "live-code-sdl2-opengl-2_1-template"
 version = "0.1.0"
 dependencies = [
  "common 0.1.0",
- "image 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "image_decoding 0.1.0",
  "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "open_gl_bindings 0.1.0",

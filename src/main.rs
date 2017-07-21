@@ -2,6 +2,7 @@ extern crate open_gl_bindings;
 extern crate sdl2;
 
 extern crate common;
+extern crate image_decoding;
 
 #[cfg(debug_assertions)]
 extern crate libloading;
@@ -19,9 +20,7 @@ use std::io;
 use std::io::prelude::*;
 use std::fs::File;
 
-extern crate image;
 
-use image::ImageDecoder;
 
 use std::ffi::CString;
 use std::str;
@@ -216,12 +215,18 @@ impl Resources {
         unsafe {
             ctx.UseProgram(colour_shader.program);
         }
-
+        println!(
+            "before make_texture_from_png {:?}",
+            std::time::SystemTime::now()
+        );
         let textures = [
             make_texture_from_png(&ctx, "images/texture0.png"),
             make_texture_from_png(&ctx, "images/texture1.png"),
         ];
-
+        println!(
+            "after make_texture_from_png {:?}",
+            std::time::SystemTime::now()
+        );
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -687,7 +692,7 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     varying vec2 texcoord;\n\
     void main() {\n\
         vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
-        texcoord = corner * vec2(1.0 / 7.0, 1.0 / 5.0) + texture_xy;
+        texcoord = corner * vec2(140.0 / 1024.0, 190.0 / 1024.0) + texture_xy;
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
@@ -797,18 +802,13 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
     let mut texture = 0;
 
     if let Ok(image) = File::open(filename) {
-        let mut decoder = image::png::PNGDecoder::new(image);
-        match (
-            decoder.dimensions(),
-            decoder.colortype(),
-            decoder.read_image(),
-        ) {
+        match image_decoding::decode_png(image) {
             (Ok((width, height)), Ok(colortype), Ok(pixels)) => {
                 let (external_format, data_type) = match colortype {
-                    image::ColorType::RGB(8) => (gl::RGB, gl::UNSIGNED_BYTE),
-                    image::ColorType::RGB(16) => (gl::RGB, gl::UNSIGNED_SHORT),
-                    image::ColorType::RGBA(8) => (gl::RGBA, gl::UNSIGNED_BYTE),
-                    image::ColorType::RGBA(16) => (gl::RGBA, gl::UNSIGNED_SHORT),
+                    image_decoding::ColorType::RGB(8) => (gl::RGB, gl::UNSIGNED_BYTE),
+                    image_decoding::ColorType::RGB(16) => (gl::RGB, gl::UNSIGNED_SHORT),
+                    image_decoding::ColorType::RGBA(8) => (gl::RGBA, gl::UNSIGNED_BYTE),
+                    image_decoding::ColorType::RGBA(16) => (gl::RGBA, gl::UNSIGNED_SHORT),
                     _ => {
                         //TODO make this case more distinct
                         return 0;
@@ -817,6 +817,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
 
                 unsafe {
                     ctx.GenTextures(1, &mut texture as _);
+
                     ctx.BindTexture(gl::TEXTURE_2D, texture);
 
                     ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
@@ -834,8 +835,8 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         external_format,
                         data_type,
                         (match pixels {
-                             image::DecodingResult::U8(v) => v.as_ptr() as _,
-                             image::DecodingResult::U16(v) => v.as_ptr() as _,
+                             image_decoding::DecodingResult::U8(v) => v.as_ptr() as _,
+                             image_decoding::DecodingResult::U16(v) => v.as_ptr() as _,
                          }),
                     );
                 }

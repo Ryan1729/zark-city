@@ -1,0 +1,7 @@
+[package]
+name = "image_decoding"
+version = "0.1.0"
+authors = ["Ryan1729 <Ryan1729@gmail.com>"]
+
+[dependencies]
+image = "0.14.0"
