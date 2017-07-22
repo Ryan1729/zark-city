@@ -16,8 +16,6 @@ use open_gl_bindings::gl;
 
 use sdl2::event::Event;
 
-use std::io;
-use std::io::prelude::*;
 use std::fs::File;
 
 
@@ -141,7 +139,8 @@ impl Resources {
             ctx.MatrixMode(gl::MODELVIEW);
             ctx.LoadIdentity();
 
-            ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
+            let brightness = 25.0 / 255.0;
+            ctx.ClearColor(brightness, brightness, brightness, 1.0);
             ctx.Enable(gl::BLEND);
             ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 
@@ -215,18 +214,12 @@ impl Resources {
         unsafe {
             ctx.UseProgram(colour_shader.program);
         }
-        println!(
-            "before make_texture_from_png {:?}",
-            std::time::SystemTime::now()
-        );
+
         let textures = [
             make_texture_from_png(&ctx, "images/texture0.png"),
             make_texture_from_png(&ctx, "images/texture1.png"),
         ];
-        println!(
-            "after make_texture_from_png {:?}",
-            std::time::SystemTime::now()
-        );
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -786,7 +779,6 @@ fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Ranges, usiz
 
     for mut vec in vert_vecs.iter_mut() {
         let end = start + vec.len() - 1;
-        println!("{:?}", (start, end));
         ranges[used_len] = (start as u16, end as u16);
 
         start = end + 1;
