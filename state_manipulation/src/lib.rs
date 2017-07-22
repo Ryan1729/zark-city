@@ -139,7 +139,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let view = mat4x4_mul(&camera, &projection);
 
-    for (grid_coords, card) in state.board.iter() {
+    for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
+
         let (x, y) = to_world_coords(*grid_coords);
 
         let angle = if (grid_coords.0 + grid_coords.1) % 2 == 0 {
@@ -167,12 +168,80 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             1.0,
         ];
 
-        let matrix = mat4x4_mul(&world_matrix, &view);
 
-        (p.draw_textured_poly_with_matrix)(matrix, CARD_INDEX, card.texture_coords());
+        let card_matrix = mat4x4_mul(&world_matrix, &view);
+
+        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card.texture_spec());
+
+        for (i, piece) in pieces.iter().enumerate() {
+            let (x, y) = match i {
+                0 => (0.35, 0.5),
+                1 => (-0.35, 0.5),
+                2 => (-0.35, -0.5),
+                3 => (0.35, -0.5),
+                _ => (0.0, 0.0),
+            };
+
+            let scale = piece_scale(piece);
+
+            let piece_matrix = [
+                scale * 5.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                scale * 5.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                x,
+                y,
+                0.0,
+                1.0,
+            ];
+
+            (p.draw_textured_poly_with_matrix)(
+                mat4x4_mul(&piece_matrix, &card_matrix),
+                SQUARE_POLY_INDEX,
+                piece_texture_spec(piece),
+            );
+        }
     }
 
     false
+}
+
+fn piece_scale(piece: &Piece) -> f32 {
+    match piece.pips {
+        Pips::One => 33.0 / 1024.0,
+        Pips::Two => 49.0 / 1024.0,
+        Pips::Three => 65.0 / 1024.0,
+    }
+
+}
+
+fn piece_texture_spec(piece: &Piece) -> TextureSpec {
+    let size = piece_scale(piece);
+
+    let (x, y) = match piece.pips {
+        Pips::One => (114.0 / 1024.0, 792.0 / 1024.0),
+        Pips::Two => (65.0 / 1024.0, 776.0 / 1024.0),
+        Pips::Three => (0.0, 760.0 / 1024.0),
+    };
+
+
+    let colour_offset = 65.0 / 1024.0 *
+        match piece.colour {
+            PieceColour::Red => 0.0,
+            PieceColour::Yellow => 1.0,
+            PieceColour::Green => 2.0,
+            PieceColour::Blue => 3.0,
+        };
+
+    (x, y + colour_offset, size, size, 0)
 }
 
 fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {
@@ -182,11 +251,12 @@ fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {
 fn add_random_board_card(state: &mut State) {
     state.board.insert(
         (state.rng.gen_range(-4, 4), state.rng.gen_range(-4, 4)),
-        state.rng.gen::<Card>(),
+        state.rng.gen(),
     );
 }
 
-const CARD_INDEX: usize = 0;
+const CARD_POLY_INDEX: usize = 0;
+const SQUARE_POLY_INDEX: usize = 1;
 
 //These are the verticies of the polygons which can be drawn.
 //The index refers to the index of the inner vector within the outer vecton.
@@ -194,11 +264,19 @@ const CARD_INDEX: usize = 0;
 #[no_mangle]
 pub fn get_vert_vecs() -> Vec<Vec<f32>> {
     vec![
+        //Card
         vec![
             -0.736842105, 1.0,
             -0.736842105, -1.0,
             0.736842105, -1.0,
             0.736842105, 1.0,
+        ],
+        //Square
+        vec![
+            -1.0, 1.0,
+            -1.0, -1.0,
+            1.0, -1.0,
+            1.0, 1.0,
         ],
     ]
 }

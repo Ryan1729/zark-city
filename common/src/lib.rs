@@ -5,22 +5,6 @@ use rand::{StdRng, Rand, Rng};
 use std::fmt;
 pub use std::collections::HashMap;
 
-pub struct Platform {
-    pub draw_poly: fn(f32, f32, usize),
-    pub draw_poly_with_matrix: fn([f32; 16], usize),
-    pub draw_textured_poly: fn(f32, f32, usize, (f32, f32, i32)),
-    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, (f32, f32, i32)),
-    pub set_verts: fn(Vec<Vec<f32>>),
-}
-
-pub struct State {
-    pub rng: StdRng,
-    pub cam_x: f32,
-    pub cam_y: f32,
-    pub zoom: f32,
-    pub board: HashMap<(i8, i8), Card>,
-}
-
 pub trait AllValues {
     fn all_values() -> Vec<Self>
     where
@@ -47,6 +31,98 @@ macro_rules! all_values_rand_impl {
         }
     )*)
 }
+
+pub struct Platform {
+    pub draw_poly: fn(f32, f32, usize),
+    pub draw_poly_with_matrix: fn([f32; 16], usize),
+    pub draw_textured_poly: fn(f32, f32, usize, TextureSpec),
+    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec),
+    pub set_verts: fn(Vec<Vec<f32>>),
+}
+
+pub struct State {
+    pub rng: StdRng,
+    pub cam_x: f32,
+    pub cam_y: f32,
+    pub zoom: f32,
+    pub board: HashMap<(i8, i8), Space>,
+}
+
+pub struct Space {
+    pub card: Card,
+    pub pieces: Vec<Piece>,
+}
+
+impl Rand for Space {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        let mut pieces = Vec::new();
+
+        for _ in 0..(rng.gen_range(0, 5)) {
+            pieces.push(rng.gen());
+        }
+
+        Space {
+            card: rng.gen(),
+            pieces,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Piece {
+    pub colour: PieceColour,
+    pub pips: Pips,
+}
+
+impl AllValues for Piece {
+    fn all_values() -> Vec<Piece> {
+        let mut deck = Vec::new();
+
+        for &colour in PieceColour::all_values().iter() {
+            for &pips in Pips::all_values().iter() {
+                deck.push(Piece { colour, pips });
+            }
+        }
+
+        deck
+    }
+}
+
+all_values_rand_impl!(Piece);
+
+#[derive(Clone, Copy)]
+pub enum PieceColour {
+    Red,
+    Yellow,
+    Green,
+    Blue,
+}
+use PieceColour::*;
+
+impl AllValues for PieceColour {
+    fn all_values() -> Vec<PieceColour> {
+        vec![Red, Yellow, Green, Blue]
+    }
+}
+
+all_values_rand_impl!(PieceColour);
+
+#[derive(Clone, Copy)]
+pub enum Pips {
+    One,
+    Two,
+    Three,
+}
+
+impl AllValues for Pips {
+    fn all_values() -> Vec<Pips> {
+        vec![Pips::One, Pips::Two, Pips::Three]
+    }
+}
+
+all_values_rand_impl!(Pips);
+
+pub type TextureSpec = (f32, f32, f32, f32, i32);
 
 #[derive(Clone, Copy)]
 pub struct Card {
@@ -79,8 +155,11 @@ impl fmt::Display for Card {
     }
 }
 
+const CARD_TEXTURE_WIDTH: f32 = 140.0 / 1024.0;
+const CARD_TEXTURE_HEIGHT: f32 = 190.0 / 1024.0;
+
 impl Card {
-    pub fn texture_coords(&self) -> (f32, f32, i32) {
+    pub fn texture_spec(&self) -> TextureSpec {
         let mut x = f32::from(self.value);
         let mut texture_index = 0;
 
@@ -90,8 +169,10 @@ impl Card {
         }
 
         (
-            x * 140.0 / 1024.0,
-            f32::from(self.suit) * 190.0 / 1024.0,
+            x * CARD_TEXTURE_WIDTH,
+            f32::from(self.suit) * CARD_TEXTURE_HEIGHT,
+            CARD_TEXTURE_WIDTH,
+            CARD_TEXTURE_HEIGHT,
             texture_index,
         )
     }

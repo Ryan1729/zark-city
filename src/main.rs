@@ -193,8 +193,8 @@ impl Resources {
                 ]
             };
 
-            let texture_xy_uniform = unsafe {
-                ctx.GetUniformLocation(program, CString::new("texture_xy").unwrap().as_ptr())
+            let texture_xywh_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("texture_xywh").unwrap().as_ptr())
             };
 
             let texture_index_uniform = unsafe {
@@ -206,7 +206,7 @@ impl Resources {
                 pos_attr,
                 matrix_uniform,
                 texture_uniforms,
-                texture_xy_uniform,
+                texture_xywh_uniform,
                 texture_index_uniform,
             }
         };
@@ -461,12 +461,7 @@ fn draw_poly(x: f32, y: f32, index: usize) {
     draw_poly_with_matrix(world_matrix, index);
 }
 
-fn draw_textured_poly(
-    x: f32,
-    y: f32,
-    poly_index: usize,
-    texture_coords: (gl::types::GLfloat, gl::types::GLfloat, gl::types::GLint),
-) {
+fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_spec: TextureSpec) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -489,15 +484,13 @@ fn draw_textured_poly(
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_coords);
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_spec);
 }
 
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
-    (texture_x, texture_y, texture_index): (gl::types::GLfloat,
-                                            gl::types::GLfloat,
-                                            gl::types::GLint),
+    (texture_x, texture_y, texture_w, texture_h, texture_index): TextureSpec,
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
@@ -520,6 +513,8 @@ fn draw_textured_poly_with_matrix(
             &resources.textures,
             texture_x,
             texture_y,
+            texture_w,
+            texture_h,
             texture_index,
         );
     }
@@ -599,6 +594,8 @@ fn draw_verts_with_texture(
     textures: &Textures,
     texture_x: gl::types::GLfloat,
     texture_y: gl::types::GLfloat,
+    texture_w: gl::types::GLfloat,
+    texture_h: gl::types::GLfloat,
     texture_index: gl::types::GLint,
 ) {
     unsafe {
@@ -632,7 +629,13 @@ fn draw_verts_with_texture(
         ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
         ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
 
-        ctx.Uniform2f(texture_shader.texture_xy_uniform, texture_x, texture_y);
+        ctx.Uniform4f(
+            texture_shader.texture_xywh_uniform,
+            texture_x,
+            texture_y,
+            texture_w,
+            texture_h,
+        );
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
@@ -671,7 +674,7 @@ struct TextureShader {
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
     texture_uniforms: [gl::types::GLsizei; 2],
-    texture_xy_uniform: gl::types::GLsizei,
+    texture_xywh_uniform: gl::types::GLsizei,
     texture_index_uniform: gl::types::GLsizei,
 }
 
@@ -681,11 +684,11 @@ struct TextureShader {
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
-    uniform vec2 texture_xy;\n\
+    uniform vec4 texture_xywh;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
         vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
-        texcoord = corner * vec2(140.0 / 1024.0, 190.0 / 1024.0) + texture_xy;
+        texcoord = corner * texture_xywh.zw + texture_xywh.xy;
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
