@@ -167,8 +167,26 @@ impl fmt::Display for Card {
     }
 }
 
-const CARD_TEXTURE_WIDTH: f32 = 140.0 / 1024.0;
-const CARD_TEXTURE_HEIGHT: f32 = 190.0 / 1024.0;
+//texture size in pixels
+//(that is, the side lingth of the square texture)
+pub const T_S: f32 = 1024.0;
+
+//in pixels
+pub const CARD_TEXTURE_PIXEL_WIDTH: f32 = 140.0;
+pub const CARD_TEXTURE_PIXEL_HEIGHT: f32 = 190.0;
+
+//in the range 0 - 1
+pub const CARD_TEXTURE_WIDTH: f32 = CARD_TEXTURE_PIXEL_WIDTH / T_S;
+pub const CARD_TEXTURE_HEIGHT: f32 = CARD_TEXTURE_PIXEL_HEIGHT / T_S;
+
+pub const TOOLTIP_TEXTURE_PIXEL_WIDTH: f32 = 75.0;
+pub const TOOLTIP_TEXTURE_PIXEL_HEIGHT: f32 = 26.0;
+pub const TOOLTIP_TEXTURE_WIDTH: f32 = TOOLTIP_TEXTURE_PIXEL_WIDTH / T_S;
+pub const TOOLTIP_TEXTURE_HEIGHT: f32 = TOOLTIP_TEXTURE_PIXEL_HEIGHT / T_S;
+
+pub const TOOLTIP_TEXTURE_HEIGHT_OFFSET: f32 = (TOOLTIP_TEXTURE_PIXEL_HEIGHT + 1.0) / T_S;
+
+
 
 impl Card {
     pub fn texture_spec(&self) -> TextureSpec {

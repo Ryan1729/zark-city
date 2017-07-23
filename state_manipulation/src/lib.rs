@@ -230,8 +230,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             1.0,
             0.0,
-            ((75.0 / 2.0 + 16.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
-            (1.0 - ((26.0 + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
+            ((TOOLTIP_TEXTURE_PIXEL_WIDTH / 2.0 + MOUSE_POINTER_SIZE + state.mouse_pos.0 as f32) /
+                 800.0) * 2.0 - 1.0,
+            (1.0 - ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
             0.0,
             1.0,
         ];
@@ -239,11 +240,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         let piece_colour = PieceColour::Blue;
 
         (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
-            3.0 * 140.0 / 1024.0,
-            4.0 * 190.0 / 1024.0 +
-                (f32::from(piece_colour) * 27.0 / 1024.0),
-            75.0 / 1024.0,
-            26.0 / 1024.0,
+            3.0 * CARD_TEXTURE_WIDTH,
+            4.0 * CARD_TEXTURE_HEIGHT +
+                (f32::from(piece_colour) *
+                     TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+            TOOLTIP_TEXTURE_WIDTH,
+            TOOLTIP_TEXTURE_HEIGHT,
             0,
         ));
     }
@@ -251,11 +253,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+//TODO: Is there a way to query for this rather than using this guess?
+const MOUSE_POINTER_SIZE: f32 = 16.0;
+
+const LARGEST_PIECE_TEXTURE_SIZE: f32 = 65.0 / T_S;
+
 fn piece_scale(piece: &Piece) -> f32 {
     match piece.pips {
-        Pips::One => 33.0 / 1024.0,
-        Pips::Two => 49.0 / 1024.0,
-        Pips::Three => 65.0 / 1024.0,
+        Pips::One => 33.0 / T_S,
+        Pips::Two => 49.0 / T_S,
+        Pips::Three => LARGEST_PIECE_TEXTURE_SIZE,
     }
 
 }
@@ -264,13 +271,13 @@ fn piece_texture_spec(piece: &Piece) -> TextureSpec {
     let size = piece_scale(piece);
 
     let (x, y) = match piece.pips {
-        Pips::One => (114.0 / 1024.0, 792.0 / 1024.0),
-        Pips::Two => (65.0 / 1024.0, 776.0 / 1024.0),
-        Pips::Three => (0.0, 760.0 / 1024.0),
+        Pips::One => (114.0 / T_S, 792.0 / T_S),
+        Pips::Two => (65.0 / T_S, 776.0 / T_S),
+        Pips::Three => (0.0, 760.0 / T_S),
     };
 
 
-    let colour_offset = 65.0 / 1024.0 *
+    let colour_offset = LARGEST_PIECE_TEXTURE_SIZE *
         match piece.colour {
             PieceColour::Red => 0.0,
             PieceColour::Yellow => 1.0,
@@ -295,7 +302,8 @@ fn add_random_board_card(state: &mut State) {
 const CARD_POLY_INDEX: usize = 0;
 const SQUARE_POLY_INDEX: usize = 1;
 
-const TOOLTIP_RATIO: f32 = 75.0 / 26.0;
+const CARD_RATIO: f32 = CARD_TEXTURE_PIXEL_WIDTH / CARD_TEXTURE_PIXEL_HEIGHT;
+const TOOLTIP_RATIO: f32 = TOOLTIP_TEXTURE_PIXEL_WIDTH / TOOLTIP_TEXTURE_PIXEL_HEIGHT;
 
 //These are the verticies of the polygons which can be drawn.
 //The index refers to the index of the inner vector within the outer vecton.
@@ -303,11 +311,12 @@ const TOOLTIP_RATIO: f32 = 75.0 / 26.0;
 #[no_mangle]
 pub fn get_vert_vecs() -> Vec<Vec<f32>> {
     vec![
+        //Card
         vec![
-            -140.0/190.0, 1.0,
-            -140.0/190.0, -1.0,
-            140.0/190.0, -1.0,
-            140.0/190.0, 1.0,
+            -CARD_RATIO, 1.0,
+            -CARD_RATIO, -1.0,
+            CARD_RATIO, -1.0,
+            CARD_RATIO, 1.0,
         ],
         //Square
         vec![
