@@ -216,7 +216,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 piece_texture_spec(piece),
             );
         }
-        println!("{}", (state.mouse_pos.0 as f32 / 800.0) * 2.0 - 1.0);
+
         let mouse_matrix = [
             0.05,
             0.0,
@@ -230,18 +230,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             1.0,
             0.0,
-            ((24.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
-            (1.0 - ((24.0 + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
+            ((75.0 / 2.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
+            (1.0 - ((26.0 + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
             0.0,
             1.0,
         ];
 
-        (p.draw_textured_poly_with_matrix)(
-            // mat4x4_mul(&mouse_matrix, &view),
-            mouse_matrix,
-            1,
-            (0.0125, 0.0, 0.025, 0.05, 0),
-        );
+        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
+            3.0 * 140.0 / 1024.0,
+            4.0 * 190.0 / 1024.0,
+            75.0 / 1024.0,
+            27.0 / 1024.0,
+            0,
+        ));
     }
 
     false
@@ -291,18 +292,19 @@ fn add_random_board_card(state: &mut State) {
 const CARD_POLY_INDEX: usize = 0;
 const SQUARE_POLY_INDEX: usize = 1;
 
+const TOOLTIP_RATIO: f32 = 75.0 / 26.0;
+
 //These are the verticies of the polygons which can be drawn.
 //The index refers to the index of the inner vector within the outer vecton.
 #[cfg_attr(rustfmt, rustfmt_skip)]
 #[no_mangle]
 pub fn get_vert_vecs() -> Vec<Vec<f32>> {
     vec![
-        //Card
         vec![
-            -0.736842105, 1.0,
-            -0.736842105, -1.0,
-            0.736842105, -1.0,
-            0.736842105, 1.0,
+            -140.0/190.0, 1.0,
+            -140.0/190.0, -1.0,
+            140.0/190.0, -1.0,
+            140.0/190.0, 1.0,
         ],
         //Square
         vec![
@@ -310,6 +312,13 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
             -1.0, -1.0,
             1.0, -1.0,
             1.0, 1.0,
+        ],
+        //Tooltip
+        vec![
+            -TOOLTIP_RATIO/2.0, 1.0,
+            -TOOLTIP_RATIO/2.0, -1.0,
+            TOOLTIP_RATIO/2.0, -1.0,
+            TOOLTIP_RATIO/2.0, 1.0,
         ],
     ]
 }
