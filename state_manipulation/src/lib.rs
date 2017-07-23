@@ -218,7 +218,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
 
         let mouse_matrix = [
-            0.05,
+            0.05 * aspect_ratio,
             0.0,
             0.0,
             0.0,
@@ -230,17 +230,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             1.0,
             0.0,
-            ((75.0 / 2.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
+            ((75.0 / 2.0 + 16.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
             (1.0 - ((26.0 + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
             0.0,
             1.0,
         ];
 
+        let piece_colour = PieceColour::Blue;
+
         (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
             3.0 * 140.0 / 1024.0,
-            4.0 * 190.0 / 1024.0,
+            4.0 * 190.0 / 1024.0 +
+                (f32::from(piece_colour) * 27.0 / 1024.0),
             75.0 / 1024.0,
-            27.0 / 1024.0,
+            26.0 / 1024.0,
             0,
         ));
     }

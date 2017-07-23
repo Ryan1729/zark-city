@@ -108,6 +108,17 @@ impl AllValues for PieceColour {
 
 all_values_rand_impl!(PieceColour);
 
+impl From<PieceColour> for f32 {
+    fn from(colour: PieceColour) -> Self {
+        match colour {
+            Red => 0.0,
+            Yellow => 1.0,
+            Green => 2.0,
+            Blue => 3.0,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum Pips {
     One,
