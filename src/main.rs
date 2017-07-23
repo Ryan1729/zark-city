@@ -352,6 +352,9 @@ fn main() {
                     Event::KeyUp { keycode: Some(kc), .. } => {
                         events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) }))
                     }
+                    Event::MouseMotion { x, y, .. } => {
+                        events.push(common::Event::MouseMove((x, y)))
+                    }
                     _ => {}
                 }
             }

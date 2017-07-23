@@ -46,6 +46,7 @@ pub struct State {
     pub cam_y: f32,
     pub zoom: f32,
     pub board: HashMap<(i8, i8), Space>,
+    pub mouse_pos: (i32, i32),
 }
 
 pub struct Space {
@@ -306,6 +307,7 @@ pub enum Event {
     Quit,
     KeyDown(Keycode),
     KeyUp(Keycode),
+    MouseMove((i32, i32)),
 }
 
 pub struct ProjectionSpec {

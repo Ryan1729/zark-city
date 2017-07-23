@@ -6,8 +6,6 @@ use common::Projection::*;
 
 use rand::{StdRng, SeedableRng, Rng};
 
-use std::f32::consts;
-
 #[cfg(debug_assertions)]
 #[no_mangle]
 pub fn new_state() -> State {
@@ -40,6 +38,7 @@ fn make_state(rng: StdRng) -> State {
         cam_y: 0.0,
         zoom: f32::powi(1.25, 8),
         board: HashMap::new(),
+        mouse_pos: (400, 300),
     };
 
     add_random_board_card(&mut state);
@@ -52,7 +51,12 @@ fn make_state(rng: StdRng) -> State {
 //returns true if quit requested
 pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event>) -> bool {
     for event in events {
-        println!("{:?}", *event);
+        if cfg!(debug_assertions) {
+            match *event {
+                Event::MouseMove(_) => {}
+                _ => println!("{:?}", *event),
+            }
+        }
 
         match *event {
             Event::Quit |
@@ -92,6 +96,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             Event::KeyDown(Keycode::S) => {
                 state.zoom /= 1.25;
+            }
+            Event::MouseMove((x, y)) => {
+                state.mouse_pos = (x, y);
             }
             _ => {}
         }
@@ -209,6 +216,32 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 piece_texture_spec(piece),
             );
         }
+        println!("{}", (state.mouse_pos.0 as f32 / 800.0) * 2.0 - 1.0);
+        let mouse_matrix = [
+            0.05,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.05,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            ((24.0 + state.mouse_pos.0 as f32) / 800.0) * 2.0 - 1.0,
+            (1.0 - ((24.0 + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
+            0.0,
+            1.0,
+        ];
+
+        (p.draw_textured_poly_with_matrix)(
+            // mat4x4_mul(&mouse_matrix, &view),
+            mouse_matrix,
+            1,
+            (0.0125, 0.0, 0.025, 0.05, 0),
+        );
     }
 
     false
