@@ -103,6 +103,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
+                println!("{}", state.window_wh.0 / state.window_wh.1);
             }
             _ => {}
         }
@@ -221,45 +222,89 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 piece_texture_spec(piece),
             );
         }
+        {
+            let near = 0.5;
+            let far = 1024.0;
 
-        let mouse_x = center(
-            (TOOLTIP_TEXTURE_PIXEL_WIDTH / 2.0 + MOUSE_POINTER_SIZE +
-                 state.mouse_pos.0) / state.window_wh.0,
-        );
-        let mouse_y = center(
-            1.0 -
-                ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1) / state.window_wh.1),
-        );
-        let mouse_matrix = [
-            0.05 * aspect_ratio,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.05,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            mouse_x,
-            mouse_y,
-            0.0,
-            1.0,
-        ];
+            let scale = 8.0;
+            let top = scale;
+            let bottom = -top;
+            let right = aspect_ratio * scale;
+            let left = -right;
+            let view = {
 
-        let piece_colour = PieceColour::Blue;
+                let projection = get_projection(&ProjectionSpec {
+                    top,
+                    bottom,
+                    left,
+                    right,
+                    near,
+                    far,
+                    // projection: Perspective,
+                    projection: Orthographic,
+                });
 
-        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
-            3.0 * CARD_TEXTURE_WIDTH,
-            4.0 * CARD_TEXTURE_HEIGHT +
-                (f32::from(piece_colour) *
-                     TOOLTIP_TEXTURE_HEIGHT_OFFSET),
-            TOOLTIP_TEXTURE_WIDTH,
-            TOOLTIP_TEXTURE_HEIGHT,
-            0,
-        ));
+                let camera = [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    state.cam_x,
+                    state.cam_y,
+                    0.0,
+                    1.0,
+                ];
+
+                mat4x4_mul(&camera, &projection)
+            };
+
+            let mouse_x = center((state.mouse_pos.0) / state.window_wh.0);
+            let mouse_y = -center(((state.mouse_pos.1) / state.window_wh.1));
+
+            println!("{:?}", (mouse_x, mouse_y));
+
+            let mouse_camera_matrix = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                mouse_x * (right - left),
+                mouse_y * (top - bottom),
+                0.0,
+                1.0,
+            ];
+
+            let mouse_matrix = mat4x4_mul(&mouse_camera_matrix, &view);
+            // let mouse_matrix = mouse_camera_matrix;
+
+            let piece_colour = PieceColour::Blue;
+
+            (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
+                3.0 * CARD_TEXTURE_WIDTH,
+                4.0 * CARD_TEXTURE_HEIGHT +
+                    (f32::from(piece_colour) *
+                         TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+                TOOLTIP_TEXTURE_WIDTH,
+                TOOLTIP_TEXTURE_HEIGHT,
+                0,
+            ));
+        }
     }
 
     false
@@ -343,10 +388,10 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
         ],
         //Tooltip
         vec![
-            -TOOLTIP_RATIO/2.0, 1.0,
-            -TOOLTIP_RATIO/2.0, -1.0,
-            TOOLTIP_RATIO/2.0, -1.0,
-            TOOLTIP_RATIO/2.0, 1.0,
+            -TOOLTIP_RATIO, 1.0,
+            -TOOLTIP_RATIO, -1.0,
+            TOOLTIP_RATIO, -1.0,
+            TOOLTIP_RATIO, 1.0,
         ],
     ]
 }
