@@ -39,6 +39,7 @@ fn make_state(rng: StdRng) -> State {
         zoom: f32::powi(1.25, 8),
         board: HashMap::new(),
         mouse_pos: (400, 300),
+        window_wh: (800.0, 600.0),
     };
 
     add_random_board_card(&mut state);
@@ -100,51 +101,56 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::MouseMove((x, y)) => {
                 state.mouse_pos = (x, y);
             }
+            Event::WindowSize((w, h)) => {
+                state.window_wh = (w as f32, h as f32);
+            }
             _ => {}
         }
     }
+    let aspect_ratio = state.window_wh.0 / state.window_wh.1;
+    let view = {
+        let near = 0.5;
+        let far = 1024.0;
 
-    let aspect_ratio = 800.0 / 600.0;
-    let near = 0.5;
-    let far = 1024.0;
+        let scale = state.zoom * near;
+        let top = scale;
+        let bottom = -top;
+        // let right = aspect_ratio * scale;
+        let right = scale;
+        let left = -right;
 
-    let scale = state.zoom * near;
-    let top = scale;
-    let bottom = -top;
-    let right = aspect_ratio * scale;
-    let left = -right;
-
-    let projection = get_projection(&ProjectionSpec {
-        top,
-        bottom,
-        left,
-        right,
-        near,
-        far,
-        projection: Perspective,
+        let projection = get_projection(&ProjectionSpec {
+            top,
+            bottom,
+            left,
+            right,
+            near,
+            far,
+            projection: Perspective,
         // projection: Orthographic,
-    });
+        });
 
-    let camera = [
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        state.cam_x,
-        state.cam_y,
-        0.0,
-        1.0,
-    ];
+        let camera = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            state.cam_x,
+            state.cam_y,
+            0.0,
+            1.0,
+        ];
 
-    let view = mat4x4_mul(&camera, &projection);
+        mat4x4_mul(&camera, &projection)
+    };
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
@@ -217,6 +223,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             );
         }
 
+        let mouse_x = center(
+            (TOOLTIP_TEXTURE_PIXEL_WIDTH / 2.0 + MOUSE_POINTER_SIZE +
+                 state.mouse_pos.0 as f32) / state.window_wh.0,
+        );
+        let mouse_y = center(
+            1.0 - ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1 as f32)
+             / state.window_wh.1),
+        );
         let mouse_matrix = [
             0.05 * aspect_ratio,
             0.0,
@@ -230,9 +244,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             1.0,
             0.0,
-            ((TOOLTIP_TEXTURE_PIXEL_WIDTH / 2.0 + MOUSE_POINTER_SIZE + state.mouse_pos.0 as f32) /
-                 800.0) * 2.0 - 1.0,
-            (1.0 - ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1 as f32) / 600.0)) * 2.0 - 1.0,
+            mouse_x,
+            mouse_y,
             0.0,
             1.0,
         ];
@@ -253,6 +266,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+//map [0,1] to [-1,1]
+fn center(x: f32) -> f32 {
+    x * 2.0 - 1.0
+}
+
 //TODO: Is there a way to query for this rather than using this guess?
 const MOUSE_POINTER_SIZE: f32 = 16.0;
 
@@ -264,7 +282,6 @@ fn piece_scale(piece: &Piece) -> f32 {
         Pips::Two => 49.0 / T_S,
         Pips::Three => LARGEST_PIECE_TEXTURE_SIZE,
     }
-
 }
 
 fn piece_texture_spec(piece: &Piece) -> TextureSpec {

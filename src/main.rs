@@ -355,6 +355,12 @@ fn main() {
                     Event::MouseMotion { x, y, .. } => {
                         events.push(common::Event::MouseMove((x, y)))
                     }
+                    Event::Window {
+                        win_event: sdl2::event::WindowEvent::Resized(x, y), ..
+                    } |
+                    Event::Window {
+                        win_event: sdl2::event::WindowEvent::SizeChanged(x, y), ..
+                    } => events.push(common::Event::WindowSize((x, y))),
                     _ => {}
                 }
             }
