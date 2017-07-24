@@ -39,7 +39,7 @@ fn make_state(rng: StdRng) -> State {
         zoom: f32::powi(1.25, 8),
         board: HashMap::new(),
         mouse_pos: (400, 300),
-        window_wh: (800.0, 600.0),
+        window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
     };
 
     add_random_board_card(&mut state);

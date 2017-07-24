@@ -50,6 +50,9 @@ pub struct State {
     pub window_wh: (f32, f32),
 }
 
+pub const INITIAL_WINDOW_WIDTH: u32 = 800;
+pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
+
 pub struct Space {
     pub card: Card,
     pub pieces: Vec<Piece>,

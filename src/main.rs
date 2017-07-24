@@ -293,7 +293,7 @@ fn main() {
     gl_attr.set_context_minor_version(1);
 
     let canvas = video_subsystem
-        .window("Window", 800, 600)
+        .window("Window", INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT)
         .opengl()
         .build()
         .unwrap()
@@ -305,7 +305,7 @@ fn main() {
     unsafe {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
-
+        println!("{:?}", canvas.window().drawable_size());
         RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size())
     }
 
