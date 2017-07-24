@@ -46,7 +46,7 @@ pub struct State {
     pub cam_y: f32,
     pub zoom: f32,
     pub board: HashMap<(i8, i8), Space>,
-    pub mouse_pos: (i32, i32),
+    pub mouse_pos: (f32, f32),
     pub window_wh: (f32, f32),
 }
 

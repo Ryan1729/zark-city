@@ -38,7 +38,7 @@ fn make_state(rng: StdRng) -> State {
         cam_y: 0.0,
         zoom: f32::powi(1.25, 8),
         board: HashMap::new(),
-        mouse_pos: (400, 300),
+        mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
     };
 
@@ -99,7 +99,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.zoom /= 1.25;
             }
             Event::MouseMove((x, y)) => {
-                state.mouse_pos = (x, y);
+                state.mouse_pos = (x as f32, y as f32);
             }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
@@ -107,7 +107,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             _ => {}
         }
     }
-    let aspect_ratio = 4.0/3.0;//state.window_wh.0 / state.window_wh.1;
+    let aspect_ratio = state.window_wh.0 / state.window_wh.1;
     let view = {
         let near = 0.5;
         let far = 1024.0;
@@ -126,7 +126,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             near,
             far,
             projection: Perspective,
-        // projection: Orthographic,
+            // projection: Orthographic,
         });
 
         let camera = [
@@ -224,11 +224,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let mouse_x = center(
             (TOOLTIP_TEXTURE_PIXEL_WIDTH / 2.0 + MOUSE_POINTER_SIZE +
-                 state.mouse_pos.0 as f32) / state.window_wh.0,
+                 state.mouse_pos.0) / state.window_wh.0,
         );
         let mouse_y = center(
-            1.0 - ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1 as f32)
-             / state.window_wh.1),
+            1.0 -
+                ((TOOLTIP_TEXTURE_PIXEL_HEIGHT + state.mouse_pos.1) / state.window_wh.1),
         );
         let mouse_matrix = [
             0.05 * aspect_ratio,
