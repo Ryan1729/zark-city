@@ -356,11 +356,16 @@ fn main() {
                         events.push(common::Event::MouseMove((x, y)))
                     }
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::Resized(x, y), ..
+                        win_event: sdl2::event::WindowEvent::Resized(w, h), ..
                     } |
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::SizeChanged(x, y), ..
-                    } => events.push(common::Event::WindowSize((x, y))),
+                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h), ..
+                    } => {
+                        events.push(common::Event::WindowSize((w, h)));
+                        unsafe {
+                            resources.ctx.Viewport(0, 0, w, h);
+                        }
+                    }
                     _ => {}
                 }
             }

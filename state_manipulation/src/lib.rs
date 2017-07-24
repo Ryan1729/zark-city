@@ -107,7 +107,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             _ => {}
         }
     }
-    let aspect_ratio = state.window_wh.0 / state.window_wh.1;
+    let aspect_ratio = 4.0/3.0;//state.window_wh.0 / state.window_wh.1;
     let view = {
         let near = 0.5;
         let far = 1024.0;
@@ -115,8 +115,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         let scale = state.zoom * near;
         let top = scale;
         let bottom = -top;
-        // let right = aspect_ratio * scale;
-        let right = scale;
+        let right = aspect_ratio * scale;
         let left = -right;
 
         let projection = get_projection(&ProjectionSpec {
