@@ -597,7 +597,79 @@ mod mat4x4_tests {
 
             let actual = mat4x4_mul(&p_inv, &mat4x4_mul(&p,&m));
 
-            // m == actual
+            // m ~= actual
+            let mut error:f32 = 0.0;
+            for i in 0..actual.len() {
+                let current_error = (actual[i] - m[i]).abs();
+                error = if error > current_error {
+                    error
+                } else {
+                    current_error
+                };
+            }
+
+            error <= 0.0001
+        }
+
+        fn projection_camera_inversion(
+            mat4x4: Mat4x4,
+            spec_: ProjectionSpec,
+            cam_x: f32,
+            cam_y:f32
+        )
+            -> bool
+        {
+            let m = mat4x4.m;
+
+            let mut spec = spec_.clone();
+            spec.projection = Orthographic;
+            let p = get_projection(&spec);
+            let p_inv = get_projection(&spec.inverse());
+
+            let camera = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                cam_x,
+                cam_y,
+                0.0,
+                1.0,
+            ];
+
+            let camera_inv = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                -cam_x,
+                -cam_y,
+                0.0,
+                1.0,
+            ];
+
+            let view = mat4x4_mul(&camera, &p);
+            let view_inv = mat4x4_mul(&p_inv, &camera_inv);
+
+            let actual = mat4x4_mul(&view_inv, &mat4x4_mul(&view,&m));
+
+            // m ~= actual
             let mut error:f32 = 0.0;
             for i in 0..actual.len() {
                 let current_error = (actual[i] - m[i]).abs();
@@ -608,7 +680,7 @@ mod mat4x4_tests {
                 };
             }
             println!("error {}", error);
-            error <= 0.0001
+            error <= 0.01
         }
     }
 
@@ -643,10 +715,10 @@ pub fn mat4x4_vector_mul(
     v_3: f32,
 ) -> (f32, f32, f32, f32) {
     (
-        m[0] * v_0 + m[1] * v_1 + m[2] * v_2 + m[3] * v_3,
-        m[4] * v_0 + m[5] * v_1 + m[6] * v_2 + m[7] * v_3,
-        m[8] * v_0 + m[9] * v_1 + m[10] * v_2 + m[11] * v_3,
-        m[12] * v_0 + m[13] * v_1 + m[14] * v_2 + m[15] * v_3,
+        m[0] * v_0 + m[4] * v_1 + m[8] * v_2 + m[12] * v_3,
+        m[1] * v_0 + m[5] * v_1 + m[9] * v_2 + m[13] * v_3,
+        m[2] * v_0 + m[6] * v_1 + m[10] * v_2 + m[14] * v_3,
+        m[3] * v_0 + m[7] * v_1 + m[11] * v_2 + m[15] * v_3,
     )
 }
 pub fn mat4x4_vector_mul_divide(
