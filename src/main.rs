@@ -636,13 +636,6 @@ fn draw_verts_with_texture(
 
         ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
 
-        ctx.Clear(gl::STENCIL_BUFFER_BIT);
-
-        ctx.Enable(gl::STENCIL_TEST);
-        ctx.ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
-        ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
-        ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
-
         ctx.Uniform4f(
             texture_shader.texture_xywh_uniform,
             texture_x,
@@ -652,14 +645,6 @@ fn draw_verts_with_texture(
         );
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
-
-        ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
-
-        ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
-        ctx.StencilFunc(gl::EQUAL, 1, 1);
-        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
-        ctx.Disable(gl::STENCIL_TEST);
-
     }
 }
 
