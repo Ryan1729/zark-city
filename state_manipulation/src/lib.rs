@@ -200,7 +200,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let (x, y) = to_world_coords(*grid_coords);
 
-        let angle = if (grid_coords.0 + grid_coords.1) % 2 == 0 {
+        let rotated = (grid_coords.0 + grid_coords.1) % 2 == 0;
+
+        let angle = if rotated {
             std::f32::consts::FRAC_PI_2
         } else {
             0.0
@@ -230,7 +232,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let mut card_texture_spec = card.texture_spec();
 
-        if (world_mouse_x) as i8 == grid_coords.0 && (world_mouse_y) as i8 == grid_coords.1 {
+        let on_card = if rotated {
+            (world_mouse_x - x).abs() <= 1.0 && (world_mouse_y - y).abs() <= CARD_RATIO
+        } else {
+            (world_mouse_x - x).abs() <= CARD_RATIO && (world_mouse_y - y).abs() <= 1.0
+        };
+
+        if on_card {
             card_texture_spec.6 = -0.5;
             card_texture_spec.7 = -0.5;
         }
@@ -274,7 +282,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             );
         }
 
-        {
+        if false {
             let near = 0.5;
             let far = 1024.0;
 
