@@ -589,6 +589,7 @@ mod mat4x4_tests {
     quickcheck! {
         fn projection_inversion(mat4x4: Mat4x4, spec_: ProjectionSpec) -> bool {
             let m = mat4x4.m;
+
             let mut spec = spec_.clone();
             spec.projection = Orthographic;
             let p = get_projection(&spec);
@@ -647,6 +648,16 @@ pub fn mat4x4_vector_mul(
         m[8] * v_0 + m[9] * v_1 + m[10] * v_2 + m[11] * v_3,
         m[12] * v_0 + m[13] * v_1 + m[14] * v_2 + m[15] * v_3,
     )
+}
+pub fn mat4x4_vector_mul_divide(
+    m: &[f32; 16],
+    v_0: f32,
+    v_1: f32,
+    v_2: f32,
+    v_3: f32,
+) -> (f32, f32, f32, f32) {
+    let (x, y, z, w) = mat4x4_vector_mul(m, v_0, v_1, v_2, v_3);
+    (x / w, y / w, z / w, 1.0)
 }
 
 //combined from https://github.com/AngryLawyer/rust-sdl2/blob/master/sdl2-sys/src/keycode.rs

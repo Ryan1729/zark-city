@@ -186,19 +186,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         ];
 
         let view = mat4x4_mul(&camera, &projection);
-        let inverse_view = mat4x4_mul(&inverse_camera, &inverse_projection);
+        let inverse_view = mat4x4_mul(&inverse_projection, &inverse_camera);
 
         (view, inverse_view)
     };
 
     let (world_mouse_x, world_mouse_y, _, _) =
-        mat4x4_vector_mul(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
+        mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
     println!("{:?}", (world_mouse_x, world_mouse_y));
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
-        let (x, y) = to_world_coords(*grid_coords);
+        let (card_x, card_y) = to_world_coords(*grid_coords);
 
         let rotated = (grid_coords.0 + grid_coords.1) % 2 == 0;
 
@@ -221,8 +221,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             1.0,
             0.0,
-            x,
-            y,
+            card_x,
+            card_y,
             0.0,
             1.0,
         ];
@@ -233,13 +233,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         let mut card_texture_spec = card.texture_spec();
 
         let on_card = if rotated {
-            (world_mouse_x - x).abs() <= 1.0 && (world_mouse_y - y).abs() <= CARD_RATIO
+            (world_mouse_x - card_x).abs() <= 1.0 && (world_mouse_y - card_y).abs() <= CARD_RATIO
         } else {
-            (world_mouse_x - x).abs() <= CARD_RATIO && (world_mouse_y - y).abs() <= 1.0
+            (world_mouse_x - card_x).abs() <= CARD_RATIO && (world_mouse_y - card_y).abs() <= 1.0
         };
 
         if on_card {
-            card_texture_spec.6 = -0.5;
+            card_texture_spec.5 = -0.5;
             card_texture_spec.7 = -0.5;
         }
 
@@ -275,58 +275,46 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 1.0,
             ];
 
+            let mut piece_texture_spec = piece_texture_spec(piece);
+
+            // if (world_mouse_x - card_x).abs() <= CARD_RATIO &&
+            //     (world_mouse_y - card_y).abs() <= 1.0
+            if on_card {
+                piece_texture_spec.5 = -1.5;
+                piece_texture_spec.6 = -1.5;
+                piece_texture_spec.7 = -1.5;
+            }
+
             (p.draw_textured_poly_with_matrix)(
                 mat4x4_mul(&piece_matrix, &card_matrix),
                 SQUARE_POLY_INDEX,
-                piece_texture_spec(piece),
+                piece_texture_spec,
             );
         }
+    }
+    if false {
+        let near = 0.5;
+        let far = 1024.0;
 
-        if false {
-            let near = 0.5;
-            let far = 1024.0;
+        let scale = 8.0;
+        let top = scale;
+        let bottom = -top;
+        let right = aspect_ratio * scale;
+        let left = -right;
+        let view = {
 
-            let scale = 8.0;
-            let top = scale;
-            let bottom = -top;
-            let right = aspect_ratio * scale;
-            let left = -right;
-            let view = {
+            let projection = get_projection(&ProjectionSpec {
+                top,
+                bottom,
+                left,
+                right,
+                near,
+                far,
+                // projection: Perspective,
+                projection: Orthographic,
+            });
 
-                let projection = get_projection(&ProjectionSpec {
-                    top,
-                    bottom,
-                    left,
-                    right,
-                    near,
-                    far,
-                    // projection: Perspective,
-                    projection: Orthographic,
-                });
-
-                let camera = [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    state.cam_x,
-                    state.cam_y,
-                    0.0,
-                    1.0,
-                ];
-
-                mat4x4_mul(&camera, &projection)
-            };
-
-            let mouse_camera_matrix = [
+            let camera = [
                 1.0,
                 0.0,
                 0.0,
@@ -339,31 +327,53 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 0.0,
                 1.0,
                 0.0,
-                mouse_x * (right - left),
-                mouse_y * (top - bottom),
+                state.cam_x,
+                state.cam_y,
                 0.0,
                 1.0,
             ];
 
-            let mouse_matrix = mat4x4_mul(&mouse_camera_matrix, &view);
-            // let mouse_matrix = mouse_camera_matrix;
+            mat4x4_mul(&camera, &projection)
+        };
 
-            let piece_colour = PieceColour::Blue;
 
-            (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
-                3.0 * CARD_TEXTURE_WIDTH,
-                4.0 * CARD_TEXTURE_HEIGHT +
-                    (f32::from(piece_colour) *
-                         TOOLTIP_TEXTURE_HEIGHT_OFFSET),
-                TOOLTIP_TEXTURE_WIDTH,
-                TOOLTIP_TEXTURE_HEIGHT,
-                0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ));
-        }
+        let mouse_camera_matrix = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            mouse_x * (right - left),
+            mouse_y * (top - bottom),
+            0.0,
+            1.0,
+        ];
+
+        let mouse_matrix = mat4x4_mul(&mouse_camera_matrix, &view);
+        // let mouse_matrix = mouse_camera_matrix;
+
+        let piece_colour = PieceColour::Blue;
+
+        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
+            3.0 * CARD_TEXTURE_WIDTH,
+            4.0 * CARD_TEXTURE_HEIGHT +
+                (f32::from(piece_colour) *
+                     TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+            TOOLTIP_TEXTURE_WIDTH,
+            TOOLTIP_TEXTURE_HEIGHT,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ));
     }
 
     false
@@ -414,7 +424,7 @@ fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {
 
 fn add_random_board_card(state: &mut State) {
     state.board.insert(
-        (state.rng.gen_range(-4, 4), state.rng.gen_range(-4, 4)),
+        (state.rng.gen_range(-10, 10), state.rng.gen_range(-10, 10)),
         state.rng.gen(),
     );
 }
