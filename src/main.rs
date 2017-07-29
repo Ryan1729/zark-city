@@ -201,6 +201,9 @@ impl Resources {
                 ctx.GetUniformLocation(program, CString::new("texture_index").unwrap().as_ptr())
             };
 
+            let tint_uniform =
+                unsafe { ctx.GetUniformLocation(program, CString::new("tint").unwrap().as_ptr()) };
+
             TextureShader {
                 program,
                 pos_attr,
@@ -208,6 +211,7 @@ impl Resources {
                 texture_uniforms,
                 texture_xywh_uniform,
                 texture_index_uniform,
+                tint_uniform,
             }
         };
 
@@ -504,8 +508,11 @@ fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_spec: TextureSp
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
-    (texture_x, texture_y, texture_w, texture_h, texture_index): TextureSpec,
-) {
+    (texture_x, texture_y, texture_w, texture_h, texture_index, tint_r,
+tint_g,
+tint_b,
+tint_a): TextureSpec,
+){
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UniformMatrix4fv(
@@ -530,6 +537,10 @@ fn draw_textured_poly_with_matrix(
             texture_w,
             texture_h,
             texture_index,
+            tint_r,
+            tint_g,
+            tint_b,
+            tint_a,
         );
     }
 }
@@ -611,6 +622,10 @@ fn draw_verts_with_texture(
     texture_w: gl::types::GLfloat,
     texture_h: gl::types::GLfloat,
     texture_index: gl::types::GLint,
+    tint_r: gl::types::GLfloat,
+    tint_g: gl::types::GLfloat,
+    tint_b: gl::types::GLfloat,
+    tint_a: gl::types::GLfloat,
 ) {
     unsafe {
         ctx.UseProgram(texture_shader.program);
@@ -644,6 +659,8 @@ fn draw_verts_with_texture(
             texture_h,
         );
 
+        ctx.Uniform4f(texture_shader.tint_uniform, tint_r, tint_g, tint_b, tint_a);
+
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
     }
 }
@@ -675,6 +692,7 @@ struct TextureShader {
     texture_uniforms: [gl::types::GLsizei; 2],
     texture_xywh_uniform: gl::types::GLsizei,
     texture_index_uniform: gl::types::GLsizei,
+    tint_uniform: gl::types::GLsizei,
 }
 
 //calculating the uvs here might be slower than passing them in.
@@ -694,13 +712,17 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform sampler2D textures[2];\n\
     uniform int texture_index;\n\
+    uniform vec4 tint;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
+        vec4 tex;
         if (texture_index == 1) {
-            gl_FragColor = texture2D(textures[1], texcoord);\n\
+            tex = texture2D(textures[1], texcoord);\n\
         } else {
-            gl_FragColor = texture2D(textures[0], texcoord);\n\
+            tex = texture2D(textures[0], texcoord);\n\
         }
+
+        gl_FragColor = tex + tint * tex.a;
     }";
 
 

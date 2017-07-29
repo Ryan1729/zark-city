@@ -109,7 +109,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
     let aspect_ratio = state.window_wh.0 / state.window_wh.1;
-    let view = {
+
+    let mouse_x = center((state.mouse_pos.0) / state.window_wh.0);
+    let mouse_y = -center(((state.mouse_pos.1) / state.window_wh.1));
+
+    // println!("{:?}", (mouse_x, mouse_y));
+
+    let (view, inverse_view) = {
         let near = 0.5;
         let far = 1024.0;
 
@@ -128,6 +134,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             far,
             projection: Perspective,
             // projection: Orthographic,
+        });
+
+        let inverse_projection = get_projection(&ProjectionSpec {
+            top,
+            bottom,
+            left,
+            right,
+            near,
+            far,
+            projection: InversePerspective,
+            // projection: InverseOrthographic,
         });
 
         let camera = [
@@ -149,8 +166,35 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             1.0,
         ];
 
-        mat4x4_mul(&camera, &projection)
+        let inverse_camera = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            -state.cam_x,
+            -state.cam_y,
+            0.0,
+            1.0,
+        ];
+
+        let view = mat4x4_mul(&camera, &projection);
+        let inverse_view = mat4x4_mul(&inverse_camera, &inverse_projection);
+
+        (view, inverse_view)
     };
+
+    let (world_mouse_x, world_mouse_y, _, _) =
+        mat4x4_vector_mul(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
+
+    println!("{:?}", (world_mouse_x, world_mouse_y));
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
@@ -184,7 +228,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let card_matrix = mat4x4_mul(&world_matrix, &view);
 
-        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card.texture_spec());
+        let mut card_texture_spec = card.texture_spec();
+
+        if (world_mouse_x) as i8 == grid_coords.0 && (world_mouse_y) as i8 == grid_coords.1 {
+            card_texture_spec.6 = -0.5;
+            card_texture_spec.7 = -0.5;
+        }
+
+        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card_texture_spec);
 
         for (i, piece) in pieces.iter().enumerate() {
             let (x, y) = match i {
@@ -222,6 +273,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 piece_texture_spec(piece),
             );
         }
+
         {
             let near = 0.5;
             let far = 1024.0;
@@ -266,11 +318,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 mat4x4_mul(&camera, &projection)
             };
 
-            let mouse_x = center((state.mouse_pos.0) / state.window_wh.0);
-            let mouse_y = -center(((state.mouse_pos.1) / state.window_wh.1));
-
-            println!("{:?}", (mouse_x, mouse_y));
-
             let mouse_camera_matrix = [
                 1.0,
                 0.0,
@@ -303,6 +350,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 TOOLTIP_TEXTURE_WIDTH,
                 TOOLTIP_TEXTURE_HEIGHT,
                 0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ));
         }
     }
@@ -346,7 +397,7 @@ fn piece_texture_spec(piece: &Piece) -> TextureSpec {
             PieceColour::Blue => 3.0,
         };
 
-    (x, y + colour_offset, size, size, 0)
+    (x, y + colour_offset, size, size, 0, 0.0, 0.0, 0.0, 0.0)
 }
 
 fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {

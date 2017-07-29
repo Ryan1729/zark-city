@@ -138,7 +138,7 @@ impl AllValues for Pips {
 
 all_values_rand_impl!(Pips);
 
-pub type TextureSpec = (f32, f32, f32, f32, i32);
+pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
 #[derive(Clone, Copy)]
 pub struct Card {
@@ -208,6 +208,10 @@ impl Card {
             CARD_TEXTURE_WIDTH,
             CARD_TEXTURE_HEIGHT,
             texture_index,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
         )
     }
 }
@@ -628,6 +632,21 @@ pub fn mat4x4_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
         a[12] * b[2] + a[13] * b[6] + a[14] * b[10] + a[15] * b[14],
         a[12] * b[3] + a[13] * b[7] + a[14] * b[11] + a[15] * b[15],
     ]
+}
+
+pub fn mat4x4_vector_mul(
+    m: &[f32; 16],
+    v_0: f32,
+    v_1: f32,
+    v_2: f32,
+    v_3: f32,
+) -> (f32, f32, f32, f32) {
+    (
+        m[0] * v_0 + m[1] * v_1 + m[2] * v_2 + m[3] * v_3,
+        m[4] * v_0 + m[5] * v_1 + m[6] * v_2 + m[7] * v_3,
+        m[8] * v_0 + m[9] * v_1 + m[10] * v_2 + m[11] * v_3,
+        m[12] * v_0 + m[13] * v_1 + m[14] * v_2 + m[15] * v_3,
+    )
 }
 
 //combined from https://github.com/AngryLawyer/rust-sdl2/blob/master/sdl2-sys/src/keycode.rs
