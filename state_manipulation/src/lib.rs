@@ -194,7 +194,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let (world_mouse_x, world_mouse_y, _, _) =
         mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
-    println!("{:?}", (world_mouse_x, world_mouse_y));
+    // println!("{:?}", (world_mouse_x, world_mouse_y));
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
@@ -232,10 +232,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let mut card_texture_spec = card.texture_spec();
 
+        let (card_mouse_x, card_mouse_y) = (world_mouse_x - card_x, world_mouse_y - card_y);
+
         let on_card = if rotated {
-            (world_mouse_x - card_x).abs() <= 1.0 && (world_mouse_y - card_y).abs() <= CARD_RATIO
+            (card_mouse_x).abs() <= 1.0 && (card_mouse_y).abs() <= CARD_RATIO
         } else {
-            (world_mouse_x - card_x).abs() <= CARD_RATIO && (world_mouse_y - card_y).abs() <= 1.0
+            (card_mouse_x).abs() <= CARD_RATIO && (card_mouse_y).abs() <= 1.0
         };
 
         if on_card {
@@ -277,9 +279,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let mut piece_texture_spec = piece_texture_spec(piece);
 
-            // if (world_mouse_x - card_x).abs() <= CARD_RATIO &&
-            //     (world_mouse_y - card_y).abs() <= 1.0
-            if on_card {
+            //TODO more precise piece picking
+            let on_piece = on_card &&
+                if rotated {
+                    //swapping x and y and  inverting y is equivalent to rotation by 90 degrees
+                    -card_mouse_y.signum() == x.signum() && card_mouse_x.signum() == y.signum()
+                } else {
+                    card_mouse_x.signum() == x.signum() && card_mouse_y.signum() == y.signum()
+                };
+
+            if on_piece {
                 piece_texture_spec.5 = -1.5;
                 piece_texture_spec.6 = -1.5;
                 piece_texture_spec.7 = -1.5;
