@@ -359,6 +359,12 @@ fn main() {
                     Event::MouseMotion { x, y, .. } => {
                         events.push(common::Event::MouseMove((x, y)))
                     }
+                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Left, .. } => {
+                        events.push(common::Event::LeftMouseUp)
+                    }
+                    Event::MouseButtonDown {
+                        mouse_btn: sdl2::mouse::MouseButton::Left, ..
+                    } => events.push(common::Event::LeftMouseDown),
                     Event::Window {
                         win_event: sdl2::event::WindowEvent::Resized(w, h), ..
                     } |

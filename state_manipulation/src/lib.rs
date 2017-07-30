@@ -40,6 +40,7 @@ fn make_state(rng: StdRng) -> State {
         board: HashMap::new(),
         mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
+        ui_context: UIContext::new(),
     };
 
     add_random_board_card(&mut state);
@@ -51,6 +52,9 @@ fn make_state(rng: StdRng) -> State {
 #[no_mangle]
 //returns true if quit requested
 pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event>) -> bool {
+    let mut mouse_pressed = false;
+    let mut mouse_released = false;
+
     for event in events {
         if cfg!(debug_assertions) {
             match *event {
@@ -101,6 +105,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::MouseMove((x, y)) => {
                 state.mouse_pos = (x as f32, y as f32);
             }
+            Event::LeftMouseDown => {
+                mouse_pressed = true;
+            }
+            Event::LeftMouseUp => {
+                mouse_released = true;
+            }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
                 println!("{}", state.window_wh.0 / state.window_wh.1);
@@ -108,12 +118,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             _ => {}
         }
     }
+
+    state.ui_context.frame_init();
+
     let aspect_ratio = state.window_wh.0 / state.window_wh.1;
 
     let mouse_x = center((state.mouse_pos.0) / state.window_wh.0);
     let mouse_y = -center(((state.mouse_pos.1) / state.window_wh.1));
-
-    // println!("{:?}", (mouse_x, mouse_y));
 
     let (view, inverse_view) = {
         let near = 0.5;
@@ -194,11 +205,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let (world_mouse_x, world_mouse_y, _, _) =
         mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
-    // println!("{:?}", (world_mouse_x, world_mouse_y));
-
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
         let (card_x, card_y) = to_world_coords(*grid_coords);
+
+        let card_id = card_id(card_x as _, card_y as _);
 
         let rotated = (grid_coords.0 + grid_coords.1) % 2 == 0;
 
@@ -256,6 +267,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 _ => (0.0, 0.0),
             };
 
+            let piece_id = piece_id(card_id, i as _);
+
             let scale = piece_scale(piece);
 
             let piece_matrix = [
@@ -282,23 +295,46 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             //TODO more precise piece picking
             let on_piece = on_card &&
                 if rotated {
-                    //swapping x and y and  inverting y is equivalent to rotation by 90 degrees
+                    //swapping x and y and inverting y is equivalent to rotation by 90 degrees
                     -card_mouse_y.signum() == x.signum() && card_mouse_x.signum() == y.signum()
                 } else {
                     card_mouse_x.signum() == x.signum() && card_mouse_y.signum() == y.signum()
                 };
 
-            if on_piece {
-                piece_texture_spec.5 = -1.5;
-                piece_texture_spec.6 = -1.5;
-                piece_texture_spec.7 = -1.5;
-            }
-
-            (p.draw_textured_poly_with_matrix)(
-                mat4x4_mul(&piece_matrix, &card_matrix),
-                SQUARE_POLY_INDEX,
-                piece_texture_spec,
+            let button_outcome = button_logic(
+                &mut state.ui_context,
+                ButtonState {
+                    id: piece_id,
+                    pointer_inside: on_piece,
+                    mouse_pressed,
+                    mouse_released,
+                },
             );
+
+            if button_outcome.clicked {
+                println!("click");
+            } else {
+                match button_outcome.draw_state {
+                    Pressed => {
+                        piece_texture_spec.5 = 1.5;
+                        piece_texture_spec.6 = 1.5;
+                        piece_texture_spec.7 = 1.5;
+                    }
+                    Hover => {
+                        piece_texture_spec.5 = -1.5;
+                        piece_texture_spec.6 = -1.5;
+                        piece_texture_spec.7 = -1.5;
+                    }
+                    Inactive => {}
+                }
+
+
+                (p.draw_textured_poly_with_matrix)(
+                    mat4x4_mul(&piece_matrix, &card_matrix),
+                    SQUARE_POLY_INDEX,
+                    piece_texture_spec,
+                );
+            };
         }
     }
     if false {
@@ -386,6 +422,79 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     false
+}
+
+fn card_id(card_x: UiId, card_y: UiId) -> UiId {
+    //assumss| card_x| and |card_y| will both stay below 1000
+    10_000 + (card_x + 1000) * 1000 + card_y
+}
+
+fn piece_id(card_id: UiId, offset: UiId) -> UiId {
+    //assumes |offset| < 500
+    card_id + 30_000 + (offset + 500) * 1000
+}
+
+
+#[derive(Copy, Clone, Debug)]
+struct ButtonState {
+    id: UiId,
+    pointer_inside: bool,
+    mouse_pressed: bool,
+    mouse_released: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ButtonOutcome {
+    clicked: bool,
+    draw_state: DrawState,
+}
+
+#[derive(Copy, Clone, Debug)]
+enum DrawState {
+    Pressed,
+    Hover,
+    Inactive,
+}
+use DrawState::*;
+
+///This function handles the logic for a given button and returns wheter it was clicked
+///and the state of the button so it can be drawn properly elsewhere
+fn button_logic(context: &mut UIContext, button_state: ButtonState) -> ButtonOutcome {
+    /// In order for this to work properly `context.frame_init();`
+    /// must be called at the start of each frame, before this function is called
+    let mut clicked = false;
+
+    let inside = button_state.pointer_inside;
+    let id = button_state.id;
+
+    if context.active == id {
+        if button_state.mouse_released {
+            clicked = context.hot == id && inside;
+
+            context.set_not_active();
+        }
+    } else if context.hot == id {
+        if button_state.mouse_pressed {
+            context.set_active(id);
+        }
+    }
+
+    if inside {
+        context.set_next_hot(id);
+    }
+
+    let draw_state = if context.active == id && button_state.mouse_pressed {
+        Pressed
+    } else if context.hot == id {
+        Hover
+    } else {
+        Inactive
+    };
+
+    ButtonOutcome {
+        clicked,
+        draw_state,
+    }
 }
 
 //map [0,1] to [-1,1]

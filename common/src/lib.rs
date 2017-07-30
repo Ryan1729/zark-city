@@ -48,6 +48,7 @@ pub struct State {
     pub board: HashMap<(i8, i8), Space>,
     pub mouse_pos: (f32, f32),
     pub window_wh: (f32, f32),
+    pub ui_context: UIContext,
 }
 
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
@@ -345,6 +346,8 @@ pub enum Event {
     KeyDown(Keycode),
     KeyUp(Keycode),
     MouseMove((i32, i32)),
+    LeftMouseUp,
+    LeftMouseDown,
     WindowSize((i32, i32)),
 }
 
@@ -731,6 +734,45 @@ pub fn mat4x4_vector_mul_divide(
     let (x, y, z, w) = mat4x4_vector_mul(m, v_0, v_1, v_2, v_3);
     (x / w, y / w, z / w, 1.0)
 }
+
+pub type UiId = i32;
+
+pub struct UIContext {
+    pub hot: UiId,
+    pub active: UiId,
+    pub next_hot: UiId,
+}
+
+impl UIContext {
+    pub fn new() -> Self {
+        UIContext {
+            hot: 0,
+            active: 0,
+            next_hot: 0,
+        }
+    }
+
+    pub fn set_not_active(&mut self) {
+        self.active = 0;
+    }
+    pub fn set_active(&mut self, id: UiId) {
+        self.active = id;
+    }
+    pub fn set_next_hot(&mut self, id: UiId) {
+        self.next_hot = id;
+    }
+    pub fn set_not_hot(&mut self) {
+        self.hot = 0;
+    }
+    pub fn frame_init(&mut self) {
+        if self.active == 0 {
+            self.hot = self.next_hot;
+        }
+        self.next_hot = 0;
+    }
+}
+
+
 
 //combined from https://github.com/AngryLawyer/rust-sdl2/blob/master/sdl2-sys/src/keycode.rs
 // and https://github.com/AngryLawyer/rust-sdl2/blob/master/src/sdl2/keyboard/keycode.rs
