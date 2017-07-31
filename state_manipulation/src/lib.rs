@@ -32,7 +32,62 @@ pub fn new_state() -> State {
     make_state(rng)
 }
 
-fn make_state(rng: StdRng) -> State {
+
+fn deal(state: &mut State) -> Option<Card> {
+    deal_parts(&mut state.deck, &mut state.pile, &mut state.rng)
+}
+
+fn deal_parts(deck: &mut Vec<Card>, pile: &mut Vec<Card>, rng: &mut StdRng) -> Option<Card> {
+    //reshuffle if we run out of cards.
+    if deck.len() == 0 {
+        if pile.len() == 0 {
+            return None;
+        }
+
+        for card in pile.drain(..) {
+            deck.push(card);
+        }
+
+        rng.shuffle(deck.as_mut_slice());
+    };
+
+    deck.pop()
+}
+
+fn make_state(mut rng: StdRng) -> State {
+
+    let mut deck = Card::all_values();
+
+    rng.shuffle(deck.as_mut_slice());
+
+    let mut pile = Vec::new();
+    let player_hand;
+    let mut cpu_hands;
+    {
+        let deck_ref = &mut deck;
+        let pile_ref = &mut pile;
+        let rng_ref = &mut rng;
+
+        //WE assume there are enough cards in the deck at the start
+
+        player_hand = vec![
+            deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+            deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+            deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+        ];
+
+        let cpu_players_count = rng_ref.gen_range(1, 5);
+        cpu_hands = Vec::new();
+
+        for _ in 0..cpu_players_count {
+            cpu_hands.push(vec![
+                deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+                deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+                deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
+            ]);
+        }
+    }
+
     let mut state = State {
         rng,
         cam_x: 0.0,
@@ -43,6 +98,10 @@ fn make_state(rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         turn: DrawInitialCard,
+        deck,
+        pile: Vec::new(),
+        player_hand,
+        cpu_hands,
     };
 
     add_random_board_card(&mut state);

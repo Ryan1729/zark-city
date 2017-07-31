@@ -50,6 +50,10 @@ pub struct State {
     pub window_wh: (f32, f32),
     pub ui_context: UIContext,
     pub turn: Turn,
+    pub deck: Vec<Card>,
+    pub pile: Vec<Card>,
+    pub player_hand: Vec<Card>,
+    pub cpu_hands: Vec<Vec<Card>>,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
