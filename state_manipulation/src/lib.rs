@@ -3,6 +3,7 @@ extern crate common;
 
 use common::*;
 use common::Projection::*;
+use common::Turn::*;
 
 use rand::{StdRng, SeedableRng, Rng};
 
@@ -41,6 +42,7 @@ fn make_state(rng: StdRng) -> State {
         mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
+        turn: DrawInitialCard,
     };
 
     add_random_board_card(&mut state);
@@ -419,6 +421,29 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             0.0,
             0.0,
         ));
+    }
+
+    let t = state.turn;
+
+    match state.turn {
+        DrawInitialCard => {}
+        SelectTurnOption => {}
+        DrawThree => {}
+        Grow => {}
+        Spawn => {}
+        Build => {}
+        Move => {}
+        ConvertSlashDemolish => {}
+        Fly => {}
+        Hatch => {}
+        CpuTurn => {}
+        Over(piece_colour) => {}
+    };
+
+    if cfg!(debug_assertions) {
+        if t != state.turn {
+            println!("{:?}", state.turn);
+        }
     }
 
     false

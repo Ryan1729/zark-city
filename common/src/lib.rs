@@ -49,6 +49,23 @@ pub struct State {
     pub mouse_pos: (f32, f32),
     pub window_wh: (f32, f32),
     pub ui_context: UIContext,
+    pub turn: Turn,
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum Turn {
+    DrawInitialCard,
+    SelectTurnOption,
+    DrawThree,
+    Grow,
+    Spawn,
+    Build,
+    Move,
+    ConvertSlashDemolish,
+    Fly,
+    Hatch,
+    CpuTurn,
+    Over(PieceColour),
 }
 
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
@@ -96,7 +113,7 @@ impl AllValues for Piece {
 
 all_values_rand_impl!(Piece);
 
-#[derive(Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum PieceColour {
     Red,
     Yellow,
