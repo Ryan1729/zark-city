@@ -33,10 +33,11 @@ macro_rules! all_values_rand_impl {
 }
 
 pub struct Platform {
-    pub draw_poly: fn(f32, f32, usize),
-    pub draw_poly_with_matrix: fn([f32; 16], usize),
-    pub draw_textured_poly: fn(f32, f32, usize, TextureSpec),
-    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec),
+    pub draw_poly: fn(f32, f32, usize, usize),
+    pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
+    pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
+    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
+    pub draw_layer: fn(usize),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 

@@ -317,7 +317,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             card_texture_spec.7 = -0.5;
         }
 
-        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card_texture_spec);
+        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card_texture_spec, 0);
 
         for (i, piece) in pieces.iter().enumerate() {
             let (x, y) = match i {
@@ -394,6 +394,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     mat4x4_mul(&piece_matrix, &card_matrix),
                     SQUARE_POLY_INDEX,
                     piece_texture_spec,
+                    0,
                 );
             };
         }
@@ -428,6 +429,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 }
 
 fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_y): (f32, f32)) {
+    let layer = 1;
 
     let near = 0.5;
     let far = 1024.0;
@@ -480,7 +482,7 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         texture_spec.8 = -0.75;
 
-        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec);
+        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, layer);
     }
 
     if false {
@@ -508,11 +510,10 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         let piece_colour = PieceColour::Blue;
 
-        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, (
+        let piece_texture_spec = (
             3.0 * CARD_TEXTURE_WIDTH,
             4.0 * CARD_TEXTURE_HEIGHT +
-                (f32::from(piece_colour) *
-                     TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+                (f32::from(piece_colour) * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
             TOOLTIP_TEXTURE_WIDTH,
             TOOLTIP_TEXTURE_HEIGHT,
             0,
@@ -520,8 +521,12 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
             0.0,
             0.0,
             0.0,
-        ));
+        );
+
+        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, piece_texture_spec, layer);
     }
+
+    (p.draw_layer)(1);
 }
 
 fn card_id(card_x: UiId, card_y: UiId) -> UiId {

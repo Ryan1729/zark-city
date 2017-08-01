@@ -147,7 +147,7 @@ impl Resources {
 
             ctx.Enable(gl::TEXTURE_2D);
             ctx.Enable(gl::BLEND);
-            ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            reset_blend_func(&ctx);
 
             //create framebuffers
             ctx.GenFramebuffers(1, frame_buffers.as_mut_ptr().offset(1));
@@ -300,8 +300,6 @@ impl Resources {
             make_texture_from_png(&ctx, "images/texture1.png"),
         ];
 
-
-
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -425,6 +423,7 @@ fn main() {
         draw_poly_with_matrix,
         draw_textured_poly,
         draw_textured_poly_with_matrix,
+        draw_layer,
         set_verts,
     };
 
@@ -532,9 +531,17 @@ fn main() {
 
 }
 
+fn get_frame_buffer(resources: &Resources, frame_buffer_index: usize) -> gl::types::GLuint {
+    resources.frame_buffers[if frame_buffer_index < FRAMEBUFFER_COUNT {
+                                frame_buffer_index
+                            } else {
+                                0
+                            }]
+}
+
 // these `draw_` functions should probably batch draw calls to minimize shader switching,
-// but I'll be able to provide the same SPI and change to that later so it can wait
-fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
+// but I'll be able to provide the same API and change to that later so it can wait
+fn draw_poly_with_matrix(world_matrix: [f32; 16], poly_index: usize, frame_buffer_index: usize) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UniformMatrix4fv(
@@ -544,8 +551,9 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
                 world_matrix.as_ptr() as _,
             );
         }
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
 
-        let (start, end) = resources.vert_ranges[index];
+        let (start, end) = resources.vert_ranges[poly_index];
 
         draw_verts_with_outline(
             &resources.ctx,
@@ -553,11 +561,12 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
             ((end + 1 - start) / 2) as _,
             resources.vertex_buffer,
             &resources.colour_shader,
+            frame_buffer,
         );
     }
 }
 
-fn draw_poly(x: f32, y: f32, index: usize) {
+fn draw_poly(x: f32, y: f32, index: usize, frame_buffer_index: usize) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -580,10 +589,16 @@ fn draw_poly(x: f32, y: f32, index: usize) {
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_poly_with_matrix(world_matrix, index);
+    draw_poly_with_matrix(world_matrix, index, frame_buffer_index);
 }
 
-fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_spec: TextureSpec) {
+fn draw_textured_poly(
+    x: f32,
+    y: f32,
+    poly_index: usize,
+    texture_spec: TextureSpec,
+    frame_buffer_index: usize,
+) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -606,7 +621,7 @@ fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_spec: TextureSp
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_spec);
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_spec, frame_buffer_index);
 }
 
 fn draw_textured_poly_with_matrix(
@@ -616,6 +631,7 @@ fn draw_textured_poly_with_matrix(
 tint_g,
 tint_b,
 tint_a): TextureSpec,
+frame_buffer_index: usize
 ){
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
@@ -626,6 +642,8 @@ tint_a): TextureSpec,
                 world_matrix.as_ptr() as _,
             );
         }
+
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
 
         let (start, end) = resources.vert_ranges[poly_index];
 
@@ -645,7 +663,61 @@ tint_a): TextureSpec,
             tint_g,
             tint_b,
             tint_a,
+            frame_buffer,
         );
+    }
+}
+
+fn draw_layer(frame_buffer_index: usize) {
+    if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
+
+        let ctx = &resources.ctx;
+
+        if frame_buffer != 0 {
+            unsafe {
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+                ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            }
+
+            let mut world_matrix: [f32; 16] = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            ];
+
+            let texture_spec = (
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                //assume frame_buffer_index is valid and non-zero
+                resources.frame_buffer_textures[frame_buffer_index] as _,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            );
+
+            draw_textured_poly_with_matrix(world_matrix, 0, texture_spec, 0);
+
+            unsafe {
+                reset_blend_func(ctx);
+            }
+        }
     }
 }
 
@@ -655,14 +727,29 @@ fn set_verts(vert_vecs: Vec<Vec<f32>>) {
     }
 }
 
+
+unsafe fn begin_using_frame_buffer(ctx: &gl::Gl, frame_buffer: gl::types::GLuint) {
+    ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+}
+unsafe fn end_using_frame_buffer(ctx: &gl::Gl) {
+    ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+}
+
+unsafe fn reset_blend_func(ctx: &gl::Gl) {
+    ctx.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+}
+
 fn draw_verts_with_outline(
     ctx: &gl::Gl,
     start: isize,
     vert_count: gl::types::GLsizei,
     vertex_buffer: gl::types::GLuint,
     colour_shader: &ColourShader,
+    frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
+        begin_using_frame_buffer(ctx, frame_buffer);
+
         ctx.UseProgram(colour_shader.program);
 
         ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
@@ -710,6 +797,8 @@ fn draw_verts_with_outline(
             1.0,
         );
         ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
+
+        end_using_frame_buffer(ctx);
     }
 }
 
@@ -730,8 +819,11 @@ fn draw_verts_with_texture(
     tint_g: gl::types::GLfloat,
     tint_b: gl::types::GLfloat,
     tint_a: gl::types::GLfloat,
+    frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
         ctx.UseProgram(texture_shader.program);
 
         ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
@@ -766,6 +858,8 @@ fn draw_verts_with_texture(
         ctx.Uniform4f(texture_shader.tint_uniform, tint_r, tint_g, tint_b, tint_a);
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
     }
 }
 
