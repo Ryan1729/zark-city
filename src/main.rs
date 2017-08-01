@@ -118,9 +118,9 @@ static mut RESOURCES: Option<Resources> = None;
 
 type Textures = [gl::types::GLuint; 2];
 
+//this includes the default framebuffer
 const FRAMEBUFFER_COUNT: usize = 2;
-type FrameBuffers = [gl::types::GLuint; FRAMEBUFFER_COUNT];
-type FrameTextures = [gl::types::GLuint; FRAMEBUFFER_COUNT];
+type FrameBufferHandles = [gl::types::GLuint; FRAMEBUFFER_COUNT];
 
 struct Resources {
     ctx: gl::Gl,
@@ -130,15 +130,17 @@ struct Resources {
     textures: Textures,
     colour_shader: ColourShader,
     texture_shader: TextureShader,
-    frame_buffers: FrameBuffers,
-    frame_buffer_textures: FrameBuffers,
+    frame_buffers: FrameBufferHandles,
+    frame_buffer_textures: FrameBufferHandles,
+    frame_buffer_render_buffers: FrameBufferHandles,
 }
 
 impl Resources {
     fn new(app: &Application, ctx: gl::Gl, (width, height): (u32, u32)) -> Option<Self> {
 
-        let mut frame_buffers = [0; 2];
-        let mut frame_buffer_textures = [0; 2];
+        let mut frame_buffers = [0; FRAMEBUFFER_COUNT];
+        let mut frame_buffer_textures = [0; FRAMEBUFFER_COUNT];
+        let mut frame_buffer_render_buffers = [0; FRAMEBUFFER_COUNT];
 
         unsafe {
             ctx.Viewport(0, 0, width as _, height as _);
@@ -187,15 +189,26 @@ impl Resources {
             // unbind
             ctx.BindTexture(gl::TEXTURE_2D, 0);
 
-            for &frame_buffer in frame_buffers.iter() {
-                ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+            ctx.GenRenderbuffers(1, frame_buffer_render_buffers.as_mut_ptr().offset(1));
+            ctx.BindRenderbuffer(gl::RENDERBUFFER, frame_buffer_render_buffers[1]);
+            ctx.RenderbufferStorage(
+                gl::RENDERBUFFER,
+                gl::DEPTH24_STENCIL8,
+                width as _,
+                height as _,
+            );
 
-                let status = ctx.CheckFramebufferStatus(gl::FRAMEBUFFER);
-                debug_assert!(
-                    status == gl::FRAMEBUFFER_COMPLETE,
-                    "CheckFramebufferStatus returned {0:x}",
-                    status
-                );
+            if cfg!(debug_assertions) {
+                for &frame_buffer in frame_buffers.iter() {
+                    ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+                    let status = ctx.CheckFramebufferStatus(gl::FRAMEBUFFER);
+                    debug_assert!(
+                        status == gl::FRAMEBUFFER_COMPLETE,
+                        "CheckFramebufferStatus returned {0:x}",
+                        status
+                    );
+                }
             }
 
             let brightness = 25.0 / 255.0;
@@ -299,6 +312,7 @@ impl Resources {
             textures,
             frame_buffers,
             frame_buffer_textures,
+            frame_buffer_render_buffers,
         };
 
         result.set_verts(app.get_vert_vecs());
