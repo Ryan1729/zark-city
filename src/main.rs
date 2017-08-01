@@ -118,6 +118,10 @@ static mut RESOURCES: Option<Resources> = None;
 
 type Textures = [gl::types::GLuint; 2];
 
+const FRAMEBUFFER_COUNT: usize = 2;
+type FrameBuffers = [gl::types::GLuint; FRAMEBUFFER_COUNT];
+type FrameTextures = [gl::types::GLuint; FRAMEBUFFER_COUNT];
+
 struct Resources {
     ctx: gl::Gl,
     vertex_buffer: gl::types::GLuint,
@@ -126,24 +130,83 @@ struct Resources {
     textures: Textures,
     colour_shader: ColourShader,
     texture_shader: TextureShader,
+    frame_buffers: FrameBuffers,
+    frame_buffer_textures: FrameBuffers,
 }
 
 impl Resources {
     fn new(app: &Application, ctx: gl::Gl, (width, height): (u32, u32)) -> Option<Self> {
+
+        let mut frame_buffers = [0; 2];
+        let mut frame_buffer_textures = [0; 2];
+
         unsafe {
             ctx.Viewport(0, 0, width as _, height as _);
 
-            ctx.MatrixMode(gl::PROJECTION);
-            ctx.LoadIdentity();
-
-            ctx.MatrixMode(gl::MODELVIEW);
-            ctx.LoadIdentity();
-
-            let brightness = 25.0 / 255.0;
-            ctx.ClearColor(brightness, brightness, brightness, 1.0);
+            ctx.Enable(gl::TEXTURE_2D);
             ctx.Enable(gl::BLEND);
             ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 
+            //create framebuffers
+            ctx.GenFramebuffers(1, frame_buffers.as_mut_ptr().offset(1));
+            println!("{:?}", frame_buffers);
+
+            ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffers[1]);
+
+            ctx.GenTextures(1, frame_buffer_textures.as_mut_ptr().offset(1));
+
+            let texture_handle = frame_buffer_textures[1];
+
+            ctx.BindTexture(gl::TEXTURE_2D, texture_handle);
+
+            ctx.TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGBA as _,
+                width as _,
+                height as _,
+                0,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                std::ptr::null(),
+            );
+
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+
+            ctx.FramebufferTexture2D(
+                gl::FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D,
+                texture_handle,
+                0,
+            );
+
+            // unbind
+            ctx.BindTexture(gl::TEXTURE_2D, 0);
+
+            for &frame_buffer in frame_buffers.iter() {
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+                let status = ctx.CheckFramebufferStatus(gl::FRAMEBUFFER);
+                debug_assert!(
+                    status == gl::FRAMEBUFFER_COMPLETE,
+                    "CheckFramebufferStatus returned {0:x}",
+                    status
+                );
+            }
+
+            let brightness = 25.0 / 255.0;
+            for &frame_buffer in frame_buffers.iter() {
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+                ctx.ClearColor(brightness, brightness, brightness, 1.0);
+                ctx.Clear(gl::COLOR_BUFFER_BIT);
+            }
+
+            ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
 
         let colour_shader = {
@@ -224,6 +287,8 @@ impl Resources {
             make_texture_from_png(&ctx, "images/texture1.png"),
         ];
 
+
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -232,6 +297,8 @@ impl Resources {
             colour_shader,
             texture_shader,
             textures,
+            frame_buffers,
+            frame_buffer_textures,
         };
 
         result.set_verts(app.get_vert_vecs());
@@ -310,7 +377,23 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
         println!("{:?}", canvas.window().drawable_size());
-        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size())
+        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size());
+    }
+
+    if cfg!(debug_assertions) {
+        if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+            let mut err;
+            while {
+                err = unsafe { resources.ctx.GetError() };
+                err != gl::NO_ERROR
+            }
+            {
+                println!("Resources setup OpenGL error: {}", err);
+            }
+            if err != gl::NO_ERROR {
+                panic!();
+            }
+        }
     }
 
     let mut state = app.new_state();
@@ -384,6 +467,8 @@ fn main() {
                 resources.ctx.Clear(
                     gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
                 );
+
+                resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
             }
 
             if app.update_and_render(&platform, &mut state, &mut events) {
@@ -413,7 +498,6 @@ fn main() {
                 if err != gl::NO_ERROR {
                     panic!();
                 }
-
             }
 
             window.gl_swap_window();

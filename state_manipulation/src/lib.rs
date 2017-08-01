@@ -476,7 +476,11 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
-        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card.texture_spec());
+        let mut texture_spec = card.texture_spec();
+
+        texture_spec.8 = -0.75;
+
+        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec);
     }
 
     if false {
