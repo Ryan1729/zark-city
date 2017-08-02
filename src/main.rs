@@ -211,20 +211,7 @@ impl Resources {
                 }
             }
 
-            let brightness = 25.0 / 255.0;
-            for i in 0..frame_buffers.len() {
-                let frame_buffer = frame_buffers[i];
-                ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
-
-                if i == 0 {
-                    ctx.ClearColor(brightness, brightness, brightness, 1.0);
-                } else {
-                    ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
-                }
-                ctx.Clear(
-                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-                );
-            }
+            clear_all(&ctx, &frame_buffers);
 
             ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
@@ -484,14 +471,7 @@ fn main() {
             }
 
             unsafe {
-                for &frame_buffer in resources.frame_buffers.iter() {
-                    resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
-
-                    resources.ctx.Clear(
-                        gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT |
-                            gl::STENCIL_BUFFER_BIT,
-                    );
-                }
+                clear_all(&resources.ctx, &resources.frame_buffers);
 
                 resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
             }
@@ -747,9 +727,10 @@ fn draw_layer(frame_buffer_index: usize) {
                 ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
                 ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
 
-                ctx.Uniform1i(texture_shader.texture_index_uniform, -1);
+                ctx.Uniform1i(texture_shader.texture_index_uniform, 0);
 
-                ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 0.0, 1.0, 1.0);
+                //1 - y = (y * -1) + 1 so this flips the y texture coord
+                ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 1.0, 1.0, -1.0);
 
                 ctx.Uniform4f(texture_shader.tint_uniform, 0.0, 0.0, 0.0, -0.5);
 
@@ -779,6 +760,23 @@ unsafe fn end_using_frame_buffer(ctx: &gl::Gl) {
 
 unsafe fn reset_blend_func(ctx: &gl::Gl) {
     ctx.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+}
+
+unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {
+    let brightness = 25.0 / 255.0;
+    for i in 0..frame_buffers.len() {
+        let frame_buffer = frame_buffers[i];
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+        if i == 0 {
+            ctx.ClearColor(brightness, brightness, brightness, 1.0);
+        } else {
+            ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
+        }
+        ctx.Clear(
+            gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
+        );
+    }
 }
 
 fn draw_verts_with_outline(
@@ -958,8 +956,6 @@ static TEXTURED_FS_SRC: &'static str = "#version 120\n\
         vec4 tex;
         if (texture_index == 1) {
             tex = texture2D(textures[1], texcoord);\n\
-        } else if (texture_index == -1) {
-            tex = texture2D(textures[0], vec2(texcoord.x, 1.0 - texcoord.y));\n\
         } else {
             tex = texture2D(textures[0], texcoord);\n\
         }
