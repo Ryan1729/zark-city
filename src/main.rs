@@ -212,11 +212,18 @@ impl Resources {
             }
 
             let brightness = 25.0 / 255.0;
-            for &frame_buffer in frame_buffers.iter() {
+            for i in 0..frame_buffers.len() {
+                let frame_buffer = frame_buffers[i];
                 ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
 
-                ctx.ClearColor(brightness, brightness, brightness, 1.0);
-                ctx.Clear(gl::COLOR_BUFFER_BIT);
+                if i == 0 {
+                    ctx.ClearColor(brightness, brightness, brightness, 1.0);
+                } else {
+                    ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
+                }
+                ctx.Clear(
+                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
+                );
             }
 
             ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
@@ -477,9 +484,14 @@ fn main() {
             }
 
             unsafe {
-                resources.ctx.Clear(
-                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-                );
+                for &frame_buffer in resources.frame_buffers.iter() {
+                    resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+                    resources.ctx.Clear(
+                        gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT |
+                            gl::STENCIL_BUFFER_BIT,
+                    );
+                }
 
                 resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
             }
@@ -671,50 +683,80 @@ frame_buffer_index: usize
 fn draw_layer(frame_buffer_index: usize) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
-
+        let textures = resources.textures;
+        let texture_shader = &resources.texture_shader;
+        let vertex_buffer = resources.vertex_buffer;
         let ctx = &resources.ctx;
+
+        let (start, end) = resources.vert_ranges[1];
+        let vert_count = ((end + 1 - start) / 2) as _;
 
         if frame_buffer != 0 {
             unsafe {
                 ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
                 ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-            }
 
-            let mut world_matrix: [f32; 16] = [
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-            ];
+                let world_matrix: [f32; 16] = [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ];
 
-            let texture_spec = (
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                //assume frame_buffer_index is valid and non-zero
-                resources.frame_buffer_textures[frame_buffer_index] as _,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-            );
+                resources.ctx.UniformMatrix4fv(
+                    resources.texture_shader.matrix_uniform as _,
+                    1,
+                    gl::FALSE,
+                    world_matrix.as_ptr() as _,
+                );
 
-            draw_textured_poly_with_matrix(world_matrix, 0, texture_spec, 0);
 
-            unsafe {
+                ctx.UseProgram(texture_shader.program);
+
+                ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+                ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
+                ctx.VertexAttribPointer(
+                    texture_shader.pos_attr as _,
+                    2,
+                    gl::FLOAT,
+                    gl::FALSE as _,
+                    0,
+                    std::ptr::null().offset(start as isize * std::mem::size_of::<f32>() as isize),
+                );
+
+                ctx.ActiveTexture(gl::TEXTURE0);
+                ctx.BindTexture(
+                    gl::TEXTURE_2D,
+                    resources.frame_buffer_textures[frame_buffer_index],
+                );
+                ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
+
+                ctx.ActiveTexture(gl::TEXTURE1);
+                ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
+                ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
+
+                ctx.Uniform1i(texture_shader.texture_index_uniform, -1);
+
+                ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 0.0, 1.0, 1.0);
+
+                ctx.Uniform4f(texture_shader.tint_uniform, 0.0, 0.0, 0.0, -0.5);
+
+                ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+
                 reset_blend_func(ctx);
             }
         }
@@ -916,6 +958,8 @@ static TEXTURED_FS_SRC: &'static str = "#version 120\n\
         vec4 tex;
         if (texture_index == 1) {
             tex = texture2D(textures[1], texcoord);\n\
+        } else if (texture_index == -1) {
+            tex = texture2D(textures[0], vec2(texcoord.x, 1.0 - texcoord.y));\n\
         } else {
             tex = texture2D(textures[0], texcoord);\n\
         }
