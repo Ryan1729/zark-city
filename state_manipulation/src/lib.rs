@@ -328,36 +328,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
 
         for (i, piece) in pieces.iter().enumerate() {
-            let (x, y) = match i {
-                0 => (0.35, 0.5),
-                1 => (-0.35, 0.5),
-                2 => (-0.35, -0.5),
-                3 => (0.35, -0.5),
-                _ => (0.0, 0.0),
-            };
+            let (x, y) = card_relative_piece_coords(i);
 
             let piece_id = piece_id(card_id, i as _);
-
-            let scale = piece_scale(piece);
-
-            let piece_matrix = [
-                scale * 5.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                scale * 5.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                x,
-                y,
-                0.0,
-                1.0,
-            ];
 
             let mut piece_texture_spec = piece_texture_spec(piece);
 
@@ -402,13 +375,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     Inactive => {}
                 }
 
-
-                (p.draw_textured_poly_with_matrix)(
-                    mat4x4_mul(&piece_matrix, &card_matrix),
-                    SQUARE_POLY_INDEX,
-                    piece_texture_spec,
-                    0,
-                );
+                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec);
             };
         }
 
@@ -426,9 +393,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             draw_card(p, card_matrix, card, card.texture_spec());
 
-            // for piece in pieces.iter() {
-            //     draw_piece(p, card_matrix, piece);
-            // }
+            for (i, piece) in pieces.iter().enumerate() {
+                let (x, y) = card_relative_piece_coords(i);
+
+                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
+            }
         }
     }
 
@@ -458,6 +427,53 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     false
+}
+
+fn card_relative_piece_coords(index: usize) -> (f32, f32) {
+    match index % 4 {
+        0 => (0.35, 0.5),
+        1 => (-0.35, 0.5),
+        2 => (-0.35, -0.5),
+        3 => (0.35, -0.5),
+        _ => (0.0, 0.0),
+    }
+}
+
+fn draw_piece(
+    p: &Platform,
+    card_matrix: [f32; 16],
+    piece: Piece,
+    x: f32,
+    y: f32,
+    piece_texture_spec: TextureSpec,
+) {
+    let scale = piece_scale(&piece);
+
+    let piece_matrix = [
+        scale * 5.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        scale * 5.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        x,
+        y,
+        0.0,
+        1.0,
+    ];
+
+    (p.draw_textured_poly_with_matrix)(
+        mat4x4_mul(&piece_matrix, &card_matrix),
+        SQUARE_POLY_INDEX,
+        piece_texture_spec,
+        0,
+    );
 }
 
 fn draw_card(p: &Platform, card_matrix: [f32; 16], card: Card, texture_spec: TextureSpec) {
