@@ -103,6 +103,7 @@ fn make_state(mut rng: StdRng) -> State {
         player_hand,
         cpu_hands,
         hud_alpha: 1.0,
+        held_space: None,
     };
 
     add_random_board_card(&mut state);
@@ -276,6 +277,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let (world_mouse_x, world_mouse_y, _, _) =
         mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
+    let mut space_to_grab_key: Option<(i8, i8)> = None;
+
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
 
         let (card_x, card_y) = to_world_coords(*grid_coords);
@@ -284,33 +287,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let rotated = (grid_coords.0 + grid_coords.1) % 2 == 0;
 
-        let angle = if rotated {
-            std::f32::consts::FRAC_PI_2
-        } else {
-            0.0
-        };
-
-        let world_matrix = [
-            f32::cos(angle),
-            -f32::sin(angle),
-            0.0,
-            0.0,
-            f32::sin(angle),
-            f32::cos(angle),
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            card_x,
-            card_y,
-            0.0,
-            1.0,
-        ];
-
-
-        let card_matrix = mat4x4_mul(&world_matrix, &view);
+        let card_matrix = card_matrix(&view, card_x, card_y, rotated);
 
         let mut card_texture_spec = card.texture_spec();
 
@@ -322,12 +299,33 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             (card_mouse_x).abs() <= CARD_RATIO && (card_mouse_y).abs() <= 1.0
         };
 
-        if on_card {
-            card_texture_spec.5 = -0.5;
-            card_texture_spec.7 = -0.5;
-        }
+        let button_outcome = button_logic(
+            &mut state.ui_context,
+            ButtonState {
+                id: card_id,
+                pointer_inside: on_card,
+                mouse_pressed,
+                mouse_released,
+            },
+        );
 
-        (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, card_texture_spec, 0);
+        if button_outcome.clicked {
+            space_to_grab_key = Some(grid_coords.clone());
+        } else {
+            match button_outcome.draw_state {
+                Pressed => {
+                    card_texture_spec.5 = -0.5;
+                    card_texture_spec.6 = -0.5;
+                }
+                Hover => {
+                    card_texture_spec.5 = -0.5;
+                    card_texture_spec.7 = -0.5;
+                }
+                Inactive => {}
+            }
+
+            draw_card(p, card_matrix, card, card_texture_spec);
+        }
 
         for (i, piece) in pieces.iter().enumerate() {
             let (x, y) = match i {
@@ -372,15 +370,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_mouse_x.signum() == x.signum() && card_mouse_y.signum() == y.signum()
                 };
 
-            let button_outcome = button_logic(
-                &mut state.ui_context,
-                ButtonState {
-                    id: piece_id,
-                    pointer_inside: on_piece,
-                    mouse_pressed,
-                    mouse_released,
-                },
-            );
+            // let button_outcome = button_logic(
+            //     &mut state.ui_context,
+            //     ButtonState {
+            //         id: piece_id,
+            //         pointer_inside: on_piece,
+            //         mouse_pressed,
+            //         mouse_released,
+            //     },
+            // );
+
+            let button_outcome = ButtonOutcome {
+                clicked: false,
+                draw_state: Inactive,
+            };
 
             if button_outcome.clicked {
                 println!("click");
@@ -407,6 +410,25 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     0,
                 );
             };
+        }
+
+    }
+
+
+    {
+
+        if let (None, Some(key)) = (state.held_space.as_ref(), space_to_grab_key) {
+            state.held_space = state.board.remove(&key);
+        }
+
+        if let Some(Space { card, ref pieces }) = state.held_space {
+            let card_matrix = card_matrix(&view, world_mouse_x, world_mouse_y, false);
+
+            draw_card(p, card_matrix, card, card.texture_spec());
+
+            // for piece in pieces.iter() {
+            //     draw_piece(p, card_matrix, piece);
+            // }
         }
     }
 
@@ -436,6 +458,38 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     false
+}
+
+fn draw_card(p: &Platform, card_matrix: [f32; 16], card: Card, texture_spec: TextureSpec) {
+    (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, 0);
+}
+
+fn card_matrix(view: &[f32; 16], card_x: f32, card_y: f32, rotated: bool) -> [f32; 16] {
+    let angle = if rotated {
+        std::f32::consts::FRAC_PI_2
+    } else {
+        0.0
+    };
+
+    let world_matrix = [
+        f32::cos(angle),
+        -f32::sin(angle),
+        0.0,
+        0.0,
+        f32::sin(angle),
+        f32::cos(angle),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        card_x,
+        card_y,
+        0.0,
+        1.0,
+    ];
+    mat4x4_mul(&world_matrix, view)
 }
 
 fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_y): (f32, f32)) {

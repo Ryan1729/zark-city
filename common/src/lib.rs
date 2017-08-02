@@ -56,6 +56,7 @@ pub struct State {
     pub player_hand: Vec<Card>,
     pub cpu_hands: Vec<Vec<Card>>,
     pub hud_alpha: f32,
+    pub held_space: Option<Space>,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
