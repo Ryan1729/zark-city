@@ -5,7 +5,6 @@
 This is a single-player only version of [the board game](http://www.looneylabs.com/rules/zark-city) which was designed for use with [Looney Pyramids](http://www.looneylabs.com/looney-pyramids)
 
 # TODO
-* Use multiple render targets to fade HUD out all at once without "ghosting"
 * Move cards to different locations
   * simple movement
   * snap to valid positions

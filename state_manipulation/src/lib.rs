@@ -102,6 +102,7 @@ fn make_state(mut rng: StdRng) -> State {
         pile: Vec::new(),
         player_hand,
         cpu_hands,
+        hud_alpha: 1.0,
     };
 
     add_random_board_card(&mut state);
@@ -109,6 +110,7 @@ fn make_state(mut rng: StdRng) -> State {
     state
 }
 
+const FADE_RATE: f32 = 1.0 / 24.0;
 
 #[no_mangle]
 //returns true if quit requested
@@ -181,6 +183,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     state.ui_context.frame_init();
+
+    state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > 0.7 {
+        FADE_RATE
+    } else {
+        -FADE_RATE
+    };
+
+    state.hud_alpha = clamp(state.hud_alpha, 0.0, 1.0);
 
     let aspect_ratio = state.window_wh.0 / state.window_wh.1;
 
@@ -524,7 +534,7 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
         (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, piece_texture_spec, layer);
     }
 
-    (p.draw_layer)(1);
+    (p.draw_layer)(1, state.hud_alpha);
 }
 
 fn card_id(card_x: UiId, card_y: UiId) -> UiId {
@@ -684,4 +694,13 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
             TOOLTIP_RATIO, 1.0,
         ],
     ]
+}
+fn clamp(current: f32, min: f32, max: f32) -> f32 {
+    if current > max {
+        max
+    } else if current < min {
+        min
+    } else {
+        current
+    }
 }

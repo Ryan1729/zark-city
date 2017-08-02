@@ -37,7 +37,7 @@ pub struct Platform {
     pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
     pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
     pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
-    pub draw_layer: fn(usize),
+    pub draw_layer: fn(usize, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
@@ -55,6 +55,7 @@ pub struct State {
     pub pile: Vec<Card>,
     pub player_hand: Vec<Card>,
     pub cpu_hands: Vec<Vec<Card>>,
+    pub hud_alpha: f32,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]

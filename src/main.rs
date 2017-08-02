@@ -660,7 +660,7 @@ frame_buffer_index: usize
     }
 }
 
-fn draw_layer(frame_buffer_index: usize) {
+fn draw_layer(frame_buffer_index: usize, alpha: f32) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
         let textures = resources.textures;
@@ -732,7 +732,7 @@ fn draw_layer(frame_buffer_index: usize) {
                 //1 - y = (y * -1) + 1 so this flips the y texture coord
                 ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 1.0, 1.0, -1.0);
 
-                ctx.Uniform4f(texture_shader.tint_uniform, 0.0, 0.0, 0.0, -0.5);
+                ctx.Uniform4f(texture_shader.tint_uniform, 0.0, 0.0, 0.0, alpha - 1.0);
 
                 ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
