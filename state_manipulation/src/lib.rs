@@ -99,13 +99,12 @@ fn make_state(mut rng: StdRng) -> State {
         mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
-        turn: DrawInitialCard,
+        turn: Fly,
         deck,
         pile: Vec::new(),
         player_hand,
         cpu_hands,
         hud_alpha: 1.0,
-        held_space: None,
     };
 
     add_random_board_card(&mut state);
@@ -339,7 +338,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             draw_card(p, card_matrix, card, card_texture_spec);
         }
 
-        for (i, piece) in pieces.iter().enumerate() {
+        for (i, piece) in pieces.into_iter().enumerate() {
             let (x, y) = card_relative_piece_coords(i);
 
             let piece_id = piece_id(card_id, i as _);
@@ -384,19 +383,34 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     Inactive => {}
                 }
 
-                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec);
+                draw_piece(p, card_matrix, piece, x, y, piece_texture_spec);
             };
         }
 
     }
 
 
-    if let (None, Some(key)) = (state.held_space.as_ref(), space_to_grab_key) {
-        state.held_space = state.board.remove(&key).map(|s| (key, s));
-    }
+    let t = state.turn;
 
-    let target_space_coords =
-        if let Some((old_coords, Space { card, ref pieces })) = state.held_space {
+    match state.turn {
+        DrawInitialCard => {}
+        SelectTurnOption => {}
+        DrawThree => {}
+        Grow => {}
+        Spawn => {}
+        Build => {}
+        Move => {}
+        ConvertSlashDemolish => {}
+        Fly => {
+            if let Some(key) = space_to_grab_key {
+                if let Some(space) = state.board.remove(&key) {
+                    state.turn = FlySelect(key, space);
+                }
+            }
+        }
+        FlySelect(old_coords, space) => {
+            let Space { card, pieces } = space;
+
             let adjacent_empty_spaces = {
                 let mut spaces = get_adjacent_empty_spaces(&state.board);
                 spaces.remove(&old_coords);
@@ -408,8 +422,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 draw_empty_space(p, card_matrix);
             }
-
-            //draw held card
 
             let close_enough_grid_coords = {
                 let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
@@ -463,49 +475,30 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             draw_card(p, card_matrix, card, card.texture_spec());
 
-            for (i, piece) in pieces.iter().enumerate() {
+            for (i, piece) in pieces.into_iter().enumerate() {
                 let (x, y) = card_relative_piece_coords(i);
 
-                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
+                draw_piece(p, card_matrix, piece, x, y, piece_texture_spec(piece));
             }
 
-            if button_outcome.clicked {
+            let target_space_coords = if button_outcome.clicked {
                 close_enough_grid_coords
             } else {
                 None
+            };
+
+            if let Some(key) = target_space_coords {
+                if adjacent_empty_spaces.contains(&key) {
+                    state.board.insert(key, space);
+                    //TODO real target turn
+                    state.turn = Fly;
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.board.insert(old_coords, space);
+                //TODO real target turn
+                state.turn = Fly;
             }
-        } else {
-            None
-        };
-
-    if let Some(key) = target_space_coords {
-        if let Some((_, held_space)) = state.held_space.take() {
-            state.board.insert(key, held_space);
         }
-    }
-
-    if (right_mouse_pressed || escape_pressed) && state.held_space.is_some() {
-        if let Some((key, held_space)) = state.held_space.take() {
-            state.board.insert(key, held_space);
-        }
-    } else if escape_pressed && state.held_space.is_none() {
-        return true;
-    }
-
-    draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
-
-    let t = state.turn;
-
-    match state.turn {
-        DrawInitialCard => {}
-        SelectTurnOption => {}
-        DrawThree => {}
-        Grow => {}
-        Spawn => {}
-        Build => {}
-        Move => {}
-        ConvertSlashDemolish => {}
-        Fly => {}
         Hatch => {}
         CpuTurn => {}
         Over(piece_colour) => {}
@@ -516,6 +509,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             println!("{:?}", state.turn);
         }
     }
+
+    match state.turn {
+        FlySelect(_, _) => {}
+        _ => {
+            if escape_pressed {
+                return true;
+            }
+        }
+    };
+
+    draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
 
     false
 }
@@ -585,7 +589,7 @@ fn draw_piece(
     y: f32,
     piece_texture_spec: TextureSpec,
 ) {
-    let scale = piece_scale(&piece);
+    let scale = piece_scale(piece);
 
     let piece_matrix = [
         scale * 5.0,
@@ -855,7 +859,7 @@ const MOUSE_POINTER_SIZE: f32 = 16.0;
 
 const LARGEST_PIECE_TEXTURE_SIZE: f32 = 65.0 / T_S;
 
-fn piece_scale(piece: &Piece) -> f32 {
+fn piece_scale(piece: Piece) -> f32 {
     match piece.pips {
         Pips::One => 33.0 / T_S,
         Pips::Two => 49.0 / T_S,
@@ -863,7 +867,7 @@ fn piece_scale(piece: &Piece) -> f32 {
     }
 }
 
-fn piece_texture_spec(piece: &Piece) -> TextureSpec {
+fn piece_texture_spec(piece: Piece) -> TextureSpec {
     let size = piece_scale(piece);
 
     let (x, y) = match piece.pips {

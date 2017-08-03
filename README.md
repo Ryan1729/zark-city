@@ -5,9 +5,6 @@
 This is a single-player only version of [the board game](http://www.looneylabs.com/rules/zark-city) which was designed for use with [Looney Pyramids](http://www.looneylabs.com/looney-pyramids)
 
 # TODO
-* Move cards to different locations
-  * simple movement
-  * snap to valid positions
 * Move pieces to different locations
   * drag to card and insert into list
   * handle > 4 different pieces on a card

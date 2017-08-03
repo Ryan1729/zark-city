@@ -56,7 +56,6 @@ pub struct State {
     pub player_hand: Vec<Card>,
     pub cpu_hands: Vec<Vec<Card>>,
     pub hud_alpha: f32,
-    pub held_space: Option<((i8, i8), Space)>,
 }
 
 pub type Board = HashMap<(i8, i8), Space>;
@@ -72,6 +71,7 @@ pub enum Turn {
     Move,
     ConvertSlashDemolish,
     Fly,
+    FlySelect((i8, i8), Space),
     Hatch,
     CpuTurn,
     Over(PieceColour),
@@ -80,17 +80,107 @@ pub enum Turn {
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
 pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
 
+pub const MAX_PLAYERS: usize = 5;
+pub const MAX_PIECES_PER_PLAYER: usize = 9;
+pub const MAX_PIECES_PER_SPACE: usize = MAX_PLAYERS * MAX_PIECES_PER_PLAYER;
+
+#[derive(Copy)]
+pub struct SpacePieces(pub [Option<Piece>; MAX_PIECES_PER_SPACE]);
+
+impl fmt::Debug for SpacePieces {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list().entries(self.0.iter()).finish()
+    }
+}
+impl Default for SpacePieces {
+    fn default() -> Self {
+        SpacePieces([None; MAX_PIECES_PER_SPACE])
+    }
+}
+
+impl Clone for SpacePieces {
+    fn clone(&self) -> SpacePieces {
+        SpacePieces((*self).0)
+    }
+}
+
+impl PartialEq for SpacePieces {
+    fn eq(&self, other: &SpacePieces) -> bool {
+        for i in 0..MAX_PIECES_PER_SPACE {
+            if self.0[i] != other.0[i] {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+//TODO could use a non-consuming one if the copy causes slowness
+// https://stackoverflow.com/a/30220832/4496839
+impl IntoIterator for SpacePieces {
+    type Item = Piece;
+    type IntoIter = SpacePiecesIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SpacePiecesIterator {
+            pieces: self.0,
+            index: 0,
+        }
+    }
+}
+
+pub struct SpacePiecesIterator {
+    pieces: [Option<Piece>; MAX_PIECES_PER_SPACE],
+    index: usize,
+}
+
+impl Iterator for SpacePiecesIterator {
+    type Item = Piece;
+    fn next(&mut self) -> Option<Piece> {
+        if self.index >= MAX_PIECES_PER_SPACE {
+            return None;
+        }
+
+        let result = self.pieces[self.index];
+        self.index += 1;
+
+        result
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub struct Space {
     pub card: Card,
-    pub pieces: Vec<Piece>,
+    pub pieces: SpacePieces,
 }
 
 impl Rand for Space {
     fn rand<R: Rng>(rng: &mut R) -> Self {
-        let mut pieces = Vec::new();
+        let mut pieces = SpacePieces::default();
+
+        //this is how I'd like to initialize this array
+        // but it gives different random results than
+        //before the change to SpacePieces.
+        //until I understand why the results changed
+        //I'll use the one below which gives the same results
+        //as before the change.
+        //https://play.rust-lang.org/?gist=d94a9eafe11ad3e53bab63c120b1c42e&version=stable
+        // for i in 0..(rng.gen_range(0, 5)) {
+        //     pieces.0[i] = Some(rng.gen());
+        // }
+
+
+        let mut temp = Vec::new();
 
         for _ in 0..(rng.gen_range(0, 5)) {
-            pieces.push(rng.gen());
+            temp.push(rng.gen());
+        }
+
+        let mut i = 0;
+        for piece in temp.iter() {
+            pieces.0[i] = Some(*piece);
+            i += 1;
         }
 
         Space {
@@ -100,7 +190,7 @@ impl Rand for Space {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Piece {
     pub colour: PieceColour,
     pub pips: Pips,
@@ -150,7 +240,7 @@ impl From<PieceColour> for f32 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Pips {
     One,
     Two,
@@ -167,7 +257,7 @@ all_values_rand_impl!(Pips);
 
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Card {
     pub suit: Suit,
     pub value: Value,
@@ -243,7 +333,7 @@ impl Card {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -284,7 +374,7 @@ impl From<Suit> for f32 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
     Ace,
     Two,
