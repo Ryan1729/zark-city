@@ -759,7 +759,8 @@ unsafe fn end_using_frame_buffer(ctx: &gl::Gl) {
 }
 
 unsafe fn reset_blend_func(ctx: &gl::Gl) {
-    ctx.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+    ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+    // ctx.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
 }
 
 unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {

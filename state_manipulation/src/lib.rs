@@ -283,11 +283,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let (card_x, card_y) = to_world_coords(*grid_coords);
 
+        let rotated = card_is_rotated(grid_coords);
+
+        let card_matrix = get_card_matrix(&view, card_x, card_y, rotated);
+
         let card_id = card_id(card_x as _, card_y as _);
-
-        let rotated = (grid_coords.0 + grid_coords.1) % 2 == 0;
-
-        let card_matrix = card_matrix(&view, card_x, card_y, rotated);
 
         let mut card_texture_spec = card.texture_spec();
 
@@ -382,23 +382,36 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
 
-    {
+    if let (None, Some(key)) = (state.held_space.as_ref(), space_to_grab_key) {
+        state.held_space = state.board.remove(&key);
+    }
 
-        if let (None, Some(key)) = (state.held_space.as_ref(), space_to_grab_key) {
-            state.held_space = state.board.remove(&key);
+    if let Some(Space { card, ref pieces }) = state.held_space {
+
+        let adjacent_empty_spaces = get_adjacent_empty_spaces(&state.board);
+        for grid_coords in adjacent_empty_spaces.iter() {
+            let (card_x, card_y) = to_world_coords(*grid_coords);
+
+            let rotated = card_is_rotated(grid_coords);
+
+            let card_matrix = get_card_matrix(&view, card_x, card_y, rotated);
+
+            draw_empty_space(p, card_matrix);
+
         }
 
-        if let Some(Space { card, ref pieces }) = state.held_space {
-            let card_matrix = card_matrix(&view, world_mouse_x, world_mouse_y, false);
 
-            draw_card(p, card_matrix, card, card.texture_spec());
 
-            for (i, piece) in pieces.iter().enumerate() {
-                let (x, y) = card_relative_piece_coords(i);
+        let card_matrix = get_card_matrix(&view, world_mouse_x, world_mouse_y, false);
 
-                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
-            }
+        draw_card(p, card_matrix, card, card.texture_spec());
+
+        for (i, piece) in pieces.iter().enumerate() {
+            let (x, y) = card_relative_piece_coords(i);
+
+            draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
         }
+
     }
 
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
@@ -427,6 +440,40 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     false
+}
+
+fn get_adjacent_empty_spaces(board: &Board) -> Vec<(i8, i8)> {
+    let filled_coords = board.keys();
+
+    let offsets = [
+        (1, 0),
+        (1, 1),
+        (0, 1),
+        (-1, 1),
+        (-1, 0),
+        (-1, -1),
+        (0, -1),
+        (1, -1),
+    ];
+
+    let mut adjacent_empty_spaces = std::collections::HashSet::new();
+
+    for &(x, y) in filled_coords {
+        for &(dx, dy) in offsets.iter() {
+            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+            if !board.contains_key(&new_coords) {
+                adjacent_empty_spaces.insert(new_coords);
+            }
+        }
+    }
+
+    let result = adjacent_empty_spaces.drain().collect();
+
+    result
+}
+
+fn card_is_rotated(grid_coords: &(i8, i8)) -> bool {
+    (grid_coords.0 + grid_coords.1) % 2 == 0
 }
 
 fn card_relative_piece_coords(index: usize) -> (f32, f32) {
@@ -479,8 +526,26 @@ fn draw_piece(
 fn draw_card(p: &Platform, card_matrix: [f32; 16], card: Card, texture_spec: TextureSpec) {
     (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, 0);
 }
+fn draw_empty_space(p: &Platform, card_matrix: [f32; 16]) {
+    (p.draw_textured_poly_with_matrix)(
+        card_matrix,
+        CARD_POLY_INDEX,
+        (
+            4.0 * CARD_TEXTURE_WIDTH,
+            4.0 * CARD_TEXTURE_HEIGHT,
+            CARD_TEXTURE_WIDTH,
+            CARD_TEXTURE_HEIGHT,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        0,
+    );
+}
 
-fn card_matrix(view: &[f32; 16], card_x: f32, card_y: f32, rotated: bool) -> [f32; 16] {
+fn get_card_matrix(view: &[f32; 16], card_x: f32, card_y: f32, rotated: bool) -> [f32; 16] {
     let angle = if rotated {
         std::f32::consts::FRAC_PI_2
     } else {

@@ -46,7 +46,7 @@ pub struct State {
     pub cam_x: f32,
     pub cam_y: f32,
     pub zoom: f32,
-    pub board: HashMap<(i8, i8), Space>,
+    pub board: Board,
     pub mouse_pos: (f32, f32),
     pub window_wh: (f32, f32),
     pub ui_context: UIContext,
@@ -58,6 +58,8 @@ pub struct State {
     pub hud_alpha: f32,
     pub held_space: Option<Space>,
 }
+
+pub type Board = HashMap<(i8, i8), Space>;
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum Turn {
