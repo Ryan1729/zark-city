@@ -210,28 +210,11 @@ impl Rand for Space {
     fn rand<R: Rng>(rng: &mut R) -> Self {
         let mut pieces = SpacePieces::default();
 
-        //this is how I'd like to initialize this array
-        // but it gives different random results than
-        //before the change to SpacePieces.
-        //until I understand why the results changed
-        //I'll use the one below which gives the same results
-        //as before the change.
-        //https://play.rust-lang.org/?gist=d94a9eafe11ad3e53bab63c120b1c42e&version=stable
-        // for i in 0..(rng.gen_range(0, 5)) {
-        //     pieces.0[i] = Some(rng.gen());
-        // }
-
-
-        let mut temp = Vec::new();
-
-        for _ in 0..(rng.gen_range(0, 5)) {
-            temp.push(rng.gen());
-        }
-
-        let mut i = 0;
-        for piece in temp.iter() {
-            pieces.0[i] = Some(*piece);
-            i += 1;
+        //TODO remove u32 step which was just to maintain the same
+        //set of random results
+        //see https://github.com/rust-lang-nursery/rand/issues/164
+        for i in 0..(rng.gen_range::<u32>(0, 5) as usize) {
+            pieces.0[i] = Some(rng.gen());
         }
 
         Space {
