@@ -455,6 +455,12 @@ fn main() {
                     Event::MouseButtonDown {
                         mouse_btn: sdl2::mouse::MouseButton::Left, ..
                     } => events.push(common::Event::LeftMouseDown),
+                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Right, .. } => {
+                        events.push(common::Event::RightMouseUp)
+                    }
+                    Event::MouseButtonDown {
+                        mouse_btn: sdl2::mouse::MouseButton::Right, ..
+                    } => events.push(common::Event::RightMouseDown),
                     Event::Window {
                         win_event: sdl2::event::WindowEvent::Resized(w, h), ..
                     } |

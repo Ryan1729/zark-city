@@ -121,6 +121,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let mut mouse_pressed = false;
     let mut mouse_released = false;
 
+    let mut right_mouse_pressed = false;
+    let mut right_mouse_released = false;
+
+    let mut escape_pressed = false;
+
     for event in events {
         if cfg!(debug_assertions) {
             match *event {
@@ -131,9 +136,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         match *event {
             Event::Quit |
-            Event::KeyDown(Keycode::Escape) |
             Event::KeyDown(Keycode::F10) => {
                 return true;
+            }
+            Event::KeyDown(Keycode::Escape) => {
+                escape_pressed = true;
             }
             Event::KeyDown(Keycode::Space) => {
                 add_random_board_card(state);
@@ -176,6 +183,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             Event::LeftMouseUp => {
                 mouse_released = true;
+            }
+            Event::RightMouseDown => {
+                right_mouse_pressed = true;
+            }
+            Event::RightMouseUp => {
+                right_mouse_released = true;
             }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
@@ -469,6 +482,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         if let Some((_, held_space)) = state.held_space.take() {
             state.board.insert(key, held_space);
         }
+    }
+
+    if (right_mouse_pressed || escape_pressed) && state.held_space.is_some() {
+        if let Some((key, held_space)) = state.held_space.take() {
+            state.board.insert(key, held_space);
+        }
+    } else if escape_pressed && state.held_space.is_none() {
+        return true;
     }
 
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));

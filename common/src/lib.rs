@@ -374,6 +374,8 @@ pub enum Event {
     MouseMove((i32, i32)),
     LeftMouseUp,
     LeftMouseDown,
+    RightMouseUp,
+    RightMouseDown,
     WindowSize((i32, i32)),
 }
 
