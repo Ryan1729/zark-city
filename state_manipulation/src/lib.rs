@@ -9,6 +9,8 @@ use std::default::Default;
 
 use rand::{StdRng, SeedableRng, Rng};
 
+use std::collections::hash_map::Entry::Occupied;
+
 #[cfg(debug_assertions)]
 #[no_mangle]
 pub fn new_state() -> State {
@@ -99,7 +101,7 @@ fn make_state(mut rng: StdRng) -> State {
         mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
-        turn: Fly,
+        turn: Move,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -111,6 +113,13 @@ fn make_state(mut rng: StdRng) -> State {
 
     state
 }
+
+enum Action {
+    GrabPiece((i8, i8), usize),
+    GrabSpace((i8, i8)),
+    NoAction,
+}
+use Action::*;
 
 const FADE_RATE: f32 = 1.0 / 24.0;
 
@@ -291,7 +300,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let (world_mouse_x, world_mouse_y, _, _) =
         mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
-    let mut space_to_grab_key: Option<(i8, i8)> = None;
+    let mut action = NoAction;
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
         let (card_x, card_y, rotated) = get_card_spec(grid_coords);
@@ -321,7 +330,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         );
 
         if button_outcome.clicked {
-            space_to_grab_key = Some(grid_coords.clone());
+            action = GrabSpace(grid_coords.clone());
         } else {
             match button_outcome.draw_state {
                 Pressed => {
@@ -354,20 +363,23 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_mouse_x.signum() == x.signum() && card_mouse_y.signum() == y.signum()
                 };
 
-            // let button_outcome = button_logic(
-            //     &mut state.ui_context,
-            //     ButtonState {
-            //         id: piece_id,
-            //         pointer_inside: on_piece,
-            //         mouse_pressed,
-            //         mouse_released,
-            //     },
-            // );
-
-            let button_outcome: ButtonOutcome = Default::default();
+            let button_outcome = match state.turn {
+                Move => {
+                    button_logic(
+                        &mut state.ui_context,
+                        ButtonState {
+                            id: piece_id,
+                            pointer_inside: on_piece,
+                            mouse_pressed,
+                            mouse_released,
+                        },
+                    )
+                }
+                _ => Default::default(),
+            };
 
             if button_outcome.clicked {
-                println!("click");
+                action = GrabPiece(grid_coords.clone(), i);
             } else {
                 match button_outcome.draw_state {
                     Pressed => {
@@ -399,10 +411,30 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Grow => {}
         Spawn => {}
         Build => {}
-        Move => {}
+        Move => {
+            if let GrabPiece(space_coords, piece_index) = action {
+
+                if let Occupied(mut entry) = state.board.entry(space_coords) {
+                    let mut space = entry.get_mut();
+                    if let Some(piece) = space.pieces.take_if_present(piece_index) {
+                        state.turn = MoveSelect(piece);
+                    }
+                }
+            }
+        }
+        MoveSelect(piece) => {
+            draw_piece(
+                p,
+                view,
+                piece,
+                world_mouse_x,
+                world_mouse_y,
+                piece_texture_spec(piece),
+            );
+        }
         ConvertSlashDemolish => {}
         Fly => {
-            if let Some(key) = space_to_grab_key {
+            if let GrabSpace(key) = action {
                 if let Some(space) = state.board.remove(&key) {
                     state.turn = FlySelect(key, space);
                 }

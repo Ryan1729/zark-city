@@ -69,6 +69,7 @@ pub enum Turn {
     Spawn,
     Build,
     Move,
+    MoveSelect(Piece),
     ConvertSlashDemolish,
     Fly,
     FlySelect((i8, i8), Space),
@@ -86,6 +87,28 @@ pub const MAX_PIECES_PER_SPACE: usize = MAX_PLAYERS * MAX_PIECES_PER_PLAYER;
 
 #[derive(Copy)]
 pub struct SpacePieces(pub [Option<Piece>; MAX_PIECES_PER_SPACE]);
+
+impl SpacePieces {
+    pub fn take_if_present(&mut self, piece_index: usize) -> Option<Piece> {
+        if piece_index >= MAX_PIECES_PER_SPACE {
+            return None;
+        }
+
+        if let Some(piece) = self.0[piece_index] {
+            for i in piece_index..MAX_PIECES_PER_SPACE - 1 {
+                if self.0[i].is_none() {
+                    break;
+                }
+
+                self.0[i] = self.0[i + 1];
+            }
+
+            Some(piece)
+        } else {
+            None
+        }
+    }
+}
 
 impl fmt::Debug for SpacePieces {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
