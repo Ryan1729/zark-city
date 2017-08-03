@@ -5,6 +5,8 @@ use common::*;
 use common::Projection::*;
 use common::Turn::*;
 
+use std::default::Default;
+
 use rand::{StdRng, SeedableRng, Rng};
 
 #[cfg(debug_assertions)]
@@ -350,10 +352,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             //     },
             // );
 
-            let button_outcome = ButtonOutcome {
-                clicked: false,
-                draw_state: Inactive,
-            };
+            let button_outcome: ButtonOutcome = Default::default();
 
             if button_outcome.clicked {
                 println!("click");
@@ -383,7 +382,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         state.held_space = state.board.remove(&key);
     }
 
-    if let Some(Space { card, ref pieces }) = state.held_space {
+    let target_space_coords = if let Some(Space { card, ref pieces }) = state.held_space {
 
         let adjacent_empty_spaces = get_adjacent_empty_spaces(&state.board);
 
@@ -393,8 +392,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             draw_empty_space(p, card_matrix);
         }
 
-
         //draw held card
+
         let close_enough_grid_coords = {
             let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
 
@@ -420,16 +419,30 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         };
 
+        let in_place = close_enough_grid_coords.is_some();
 
-        let card_spec = if close_enough_grid_coords.is_some() &&
-            adjacent_empty_spaces.contains(&close_enough_grid_coords.unwrap())
-        {
-            get_card_spec(&close_enough_grid_coords.unwrap())
-        } else {
-            (world_mouse_x, world_mouse_y, false)
-        };
+        let card_spec =
+            if in_place && adjacent_empty_spaces.contains(&close_enough_grid_coords.unwrap()) {
+                get_card_spec(&close_enough_grid_coords.unwrap())
+            } else {
+                (world_mouse_x, world_mouse_y, false)
+            };
 
         let card_matrix = get_card_matrix(&view, card_spec);
+
+        let button_outcome = if in_place {
+            button_logic(
+                &mut state.ui_context,
+                ButtonState {
+                    id: 500,
+                    pointer_inside: true,
+                    mouse_pressed,
+                    mouse_released,
+                },
+            )
+        } else {
+            Default::default()
+        };
 
         draw_card(p, card_matrix, card, card.texture_spec());
 
@@ -439,6 +452,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
         }
 
+        if button_outcome.clicked {
+            close_enough_grid_coords
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some(key) = target_space_coords {
+        if let Some(held_space) = state.held_space.take() {
+            state.board.insert(key, held_space);
+        }
     }
 
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
@@ -735,6 +761,15 @@ struct ButtonState {
 struct ButtonOutcome {
     clicked: bool,
     draw_state: DrawState,
+}
+
+impl Default for ButtonOutcome {
+    fn default() -> Self {
+        ButtonOutcome {
+            clicked: false,
+            draw_state: Inactive,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
