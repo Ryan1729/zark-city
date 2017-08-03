@@ -300,6 +300,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let (world_mouse_x, world_mouse_y, _, _) =
         mat4x4_vector_mul_divide(&inverse_view, mouse_x, mouse_y, 0.0, 1.0);
 
+
     let mut action = NoAction;
 
     for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
@@ -332,16 +333,25 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         if button_outcome.clicked {
             action = GrabSpace(grid_coords.clone());
         } else {
-            match button_outcome.draw_state {
-                Pressed => {
-                    card_texture_spec.5 = -0.5;
-                    card_texture_spec.6 = -0.5;
-                }
-                Hover => {
+            let highlight = if let MoveSelect(piece_pickup_coords, _, _) = state.turn {
+                let orthogonally_adjacent_filled_spaces =
+                    get_orthogonally_adjacent_filled_spaces(&state.board, piece_pickup_coords);
+
+                orthogonally_adjacent_filled_spaces.contains(&grid_coords)
+            } else {
+                false
+            };
+
+            match (button_outcome.draw_state, highlight) {
+                (_, true) | (Hover, false) => {
                     card_texture_spec.5 = -0.5;
                     card_texture_spec.7 = -0.5;
                 }
-                Inactive => {}
+                (Pressed, false) => {
+                    card_texture_spec.5 = -0.5;
+                    card_texture_spec.6 = -0.5;
+                }
+                (Inactive, false) => {}
             }
 
             draw_card(p, card_matrix, card, card_texture_spec);
@@ -413,16 +423,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Build => {}
         Move => {
             if let GrabPiece(space_coords, piece_index) = action {
-
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
                     let mut space = entry.get_mut();
                     if let Some(piece) = space.pieces.take_if_present(piece_index) {
-                        state.turn = MoveSelect(piece);
+                        state.turn = MoveSelect(space_coords, piece_index, piece);
                     }
                 }
             }
         }
-        MoveSelect(piece) => {
+        MoveSelect(space_coords, piece_index, piece) => {
+
             draw_piece(
                 p,
                 view,
@@ -431,6 +441,55 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 world_mouse_y,
                 piece_texture_spec(piece),
             );
+
+
+            let close_enough_grid_coords =
+                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
+
+            let button_outcome = if close_enough_grid_coords.is_some() {
+                button_logic(
+                    &mut state.ui_context,
+                    ButtonState {
+                        id: 500,
+                        pointer_inside: true,
+                        mouse_pressed,
+                        mouse_released,
+                    },
+                )
+            } else {
+                Default::default()
+            };
+
+            let target_space_coords = if button_outcome.clicked {
+                close_enough_grid_coords
+            } else {
+                None
+            };
+
+            if let Some(key) = target_space_coords {
+                let orthogonally_adjacent_filled_spaces =
+                    get_orthogonally_adjacent_filled_spaces(&state.board, space_coords);
+
+                if orthogonally_adjacent_filled_spaces.contains(&key) {
+                    if let Occupied(mut entry) = state.board.entry(key) {
+                        let mut space = entry.get_mut();
+
+                        //shpuld this be an insert at 0 so the new piece is clearly visible?
+                        space.pieces.push(piece);
+                    }
+
+                    //TODO real target turn
+                    state.turn = Move;
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                if let Occupied(mut entry) = state.board.entry(space_coords) {
+                    let mut space = entry.get_mut();
+
+                    space.pieces.insert(piece_index, piece);
+                }
+                //TODO real target turn
+                state.turn = Move;
+            }
         }
         ConvertSlashDemolish => {}
         Fly => {
@@ -444,7 +503,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let Space { card, pieces } = space;
 
             let adjacent_empty_spaces = {
-                let mut spaces = get_adjacent_empty_spaces(&state.board);
+                let mut spaces = get_all_adjacent_empty_spaces(&state.board);
                 spaces.remove(&old_coords);
                 spaces
             };
@@ -455,30 +514,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 draw_empty_space(p, card_matrix);
             }
 
-            let close_enough_grid_coords = {
-                let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
-
-                let rotated = card_is_rotated(&closest_grid_coords);
-
-                let (center_x, center_y) = to_world_coords(closest_grid_coords);
-
-                let (x_distance, y_distance) = (
-                    f32::abs(center_x - world_mouse_x),
-                    f32::abs(center_y - world_mouse_y),
-                );
-
-                let in_bounds = if rotated {
-                    x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
-                } else {
-                    x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
-                };
-
-                if in_bounds {
-                    Some(closest_grid_coords)
-                } else {
-                    None
-                }
-            };
+            let close_enough_grid_coords =
+                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
 
             let in_place = close_enough_grid_coords.is_some();
 
@@ -556,6 +593,31 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+fn get_close_enough_grid_coords(world_mouse_x: f32, world_mouse_y: f32) -> Option<(i8, i8)> {
+    let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
+
+    let rotated = card_is_rotated(&closest_grid_coords);
+
+    let (center_x, center_y) = to_world_coords(closest_grid_coords);
+
+    let (x_distance, y_distance) = (
+        f32::abs(center_x - world_mouse_x),
+        f32::abs(center_y - world_mouse_y),
+    );
+
+    let in_bounds = if rotated {
+        x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
+    } else {
+        x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
+    };
+
+    if in_bounds {
+        Some(closest_grid_coords)
+    } else {
+        None
+    }
+}
+
 const CARD_LONG_RADIUS: f32 = 1.0;
 const CARD_SHORT_RADIUS: f32 = CARD_RATIO;
 
@@ -571,7 +633,22 @@ fn get_card_spec(grid_coords: &(i8, i8)) -> CardSpec {
 
 use std::collections::HashSet;
 
-fn get_adjacent_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
+fn get_orthogonally_adjacent_filled_spaces(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
+    let mut result = HashSet::new();
+
+    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+    for &(dx, dy) in offsets.iter() {
+        let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+        if board.contains_key(&new_coords) {
+            result.insert(new_coords);
+        }
+    }
+
+    result
+}
+
+fn get_all_adjacent_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
     let filled_coords = board.keys();
 
     let offsets = [

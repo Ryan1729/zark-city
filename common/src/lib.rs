@@ -69,7 +69,7 @@ pub enum Turn {
     Spawn,
     Build,
     Move,
-    MoveSelect(Piece),
+    MoveSelect((i8, i8), usize, Piece),
     ConvertSlashDemolish,
     Fly,
     FlySelect((i8, i8), Space),
@@ -88,14 +88,15 @@ pub const MAX_PIECES_PER_SPACE: usize = MAX_PLAYERS * MAX_PIECES_PER_PLAYER;
 #[derive(Copy)]
 pub struct SpacePieces(pub [Option<Piece>; MAX_PIECES_PER_SPACE]);
 
+//All `None`s are assumed to be at the end of the array
 impl SpacePieces {
-    pub fn take_if_present(&mut self, piece_index: usize) -> Option<Piece> {
-        if piece_index >= MAX_PIECES_PER_SPACE {
+    pub fn take_if_present(&mut self, index: usize) -> Option<Piece> {
+        if index >= MAX_PIECES_PER_SPACE {
             return None;
         }
 
-        if let Some(piece) = self.0[piece_index] {
-            for i in piece_index..MAX_PIECES_PER_SPACE - 1 {
+        if let Some(piece) = self.0[index] {
+            for i in index..MAX_PIECES_PER_SPACE - 1 {
                 if self.0[i].is_none() {
                     break;
                 }
@@ -107,6 +108,33 @@ impl SpacePieces {
         } else {
             None
         }
+    }
+
+    pub fn push(&mut self, piece: Piece) {
+        for i in 0..MAX_PIECES_PER_SPACE {
+            if self.0[i].is_none() {
+                self.0[i] = Some(piece);
+                break;
+            }
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, piece: Piece) {
+        if index >= MAX_PIECES_PER_SPACE {
+            return;
+        }
+
+        if self.0[index].is_some() {
+            for i in (index..MAX_PIECES_PER_SPACE - 1).rev() {
+                if self.0[i].is_none() {
+                    continue;
+                }
+
+                self.0[i + 1] = self.0[i];
+            }
+        }
+
+        self.0[index] = Some(piece)
     }
 }
 
