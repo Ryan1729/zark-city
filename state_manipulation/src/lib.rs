@@ -379,90 +379,94 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
     if let (None, Some(key)) = (state.held_space.as_ref(), space_to_grab_key) {
-        state.held_space = state.board.remove(&key);
+        state.held_space = state.board.remove(&key).map(|s| (key, s));
     }
 
-    let target_space_coords = if let Some(Space { card, ref pieces }) = state.held_space {
-
-        let adjacent_empty_spaces = get_adjacent_empty_spaces(&state.board);
-
-        for grid_coords in adjacent_empty_spaces.iter() {
-            let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
-
-            draw_empty_space(p, card_matrix);
-        }
-
-        //draw held card
-
-        let close_enough_grid_coords = {
-            let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
-
-            let rotated = card_is_rotated(&closest_grid_coords);
-
-            let (center_x, center_y) = to_world_coords(closest_grid_coords);
-
-            let (x_distance, y_distance) = (
-                f32::abs(center_x - world_mouse_x),
-                f32::abs(center_y - world_mouse_y),
-            );
-
-            let in_bounds = if rotated {
-                x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
-            } else {
-                x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
+    let target_space_coords =
+        if let Some((old_coords, Space { card, ref pieces })) = state.held_space {
+            let adjacent_empty_spaces = {
+                let mut spaces = get_adjacent_empty_spaces(&state.board);
+                spaces.remove(&old_coords);
+                spaces
             };
 
-            if in_bounds {
-                Some(closest_grid_coords)
+            for grid_coords in adjacent_empty_spaces.iter() {
+                let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
+
+                draw_empty_space(p, card_matrix);
+            }
+
+            //draw held card
+
+            let close_enough_grid_coords = {
+                let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
+
+                let rotated = card_is_rotated(&closest_grid_coords);
+
+                let (center_x, center_y) = to_world_coords(closest_grid_coords);
+
+                let (x_distance, y_distance) = (
+                    f32::abs(center_x - world_mouse_x),
+                    f32::abs(center_y - world_mouse_y),
+                );
+
+                let in_bounds = if rotated {
+                    x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
+                } else {
+                    x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
+                };
+
+                if in_bounds {
+                    Some(closest_grid_coords)
+                } else {
+                    None
+                }
+            };
+
+            let in_place = close_enough_grid_coords.is_some();
+
+            let card_spec =
+                if in_place && adjacent_empty_spaces.contains(&close_enough_grid_coords.unwrap()) {
+                    get_card_spec(&close_enough_grid_coords.unwrap())
+                } else {
+                    (world_mouse_x, world_mouse_y, false)
+                };
+
+            let card_matrix = get_card_matrix(&view, card_spec);
+
+            let button_outcome = if in_place {
+                button_logic(
+                    &mut state.ui_context,
+                    ButtonState {
+                        id: 500,
+                        pointer_inside: true,
+                        mouse_pressed,
+                        mouse_released,
+                    },
+                )
+            } else {
+                Default::default()
+            };
+
+            draw_card(p, card_matrix, card, card.texture_spec());
+
+            for (i, piece) in pieces.iter().enumerate() {
+                let (x, y) = card_relative_piece_coords(i);
+
+                draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
+            }
+
+            if button_outcome.clicked {
+                close_enough_grid_coords
             } else {
                 None
             }
-        };
-
-        let in_place = close_enough_grid_coords.is_some();
-
-        let card_spec =
-            if in_place && adjacent_empty_spaces.contains(&close_enough_grid_coords.unwrap()) {
-                get_card_spec(&close_enough_grid_coords.unwrap())
-            } else {
-                (world_mouse_x, world_mouse_y, false)
-            };
-
-        let card_matrix = get_card_matrix(&view, card_spec);
-
-        let button_outcome = if in_place {
-            button_logic(
-                &mut state.ui_context,
-                ButtonState {
-                    id: 500,
-                    pointer_inside: true,
-                    mouse_pressed,
-                    mouse_released,
-                },
-            )
-        } else {
-            Default::default()
-        };
-
-        draw_card(p, card_matrix, card, card.texture_spec());
-
-        for (i, piece) in pieces.iter().enumerate() {
-            let (x, y) = card_relative_piece_coords(i);
-
-            draw_piece(p, card_matrix, *piece, x, y, piece_texture_spec(piece));
-        }
-
-        if button_outcome.clicked {
-            close_enough_grid_coords
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
 
     if let Some(key) = target_space_coords {
-        if let Some(held_space) = state.held_space.take() {
+        if let Some((_, held_space)) = state.held_space.take() {
             state.board.insert(key, held_space);
         }
     }
