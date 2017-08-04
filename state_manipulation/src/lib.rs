@@ -253,43 +253,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             // projection: InverseOrthographic,
         });
 
-        let camera = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            state.cam_x,
-            state.cam_y,
-            0.0,
-            1.0,
-        ];
+        let camera = scale_translation(1.0, state.cam_x, state.cam_y);
 
-        let inverse_camera = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            -state.cam_x,
-            -state.cam_y,
-            0.0,
-            1.0,
-        ];
+        let inverse_camera = scale_translation(1.0, -state.cam_x, -state.cam_y);
 
         let view = mat4x4_mul(&camera, &projection);
         let inverse_view = mat4x4_mul(&inverse_projection, &inverse_camera);
@@ -334,16 +300,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             action = GrabSpace(grid_coords.clone());
         } else {
             let highlight = if let MoveSelect(piece_pickup_coords, _, _) = state.turn {
-                let orthogonally_adjacent_filled_spaces =
-                    get_orthogonally_adjacent_filled_spaces(&state.board, piece_pickup_coords);
+                let valid_targets = get_valid_targets(&state.board, piece_pickup_coords);
 
-                orthogonally_adjacent_filled_spaces.contains(&grid_coords)
+                valid_targets.contains(&grid_coords)
             } else {
                 false
             };
 
             match (button_outcome.draw_state, highlight) {
-                (_, true) | (Hover, false) => {
+                (_, true) | (Hover, _) => {
                     card_texture_spec.5 = -0.5;
                     card_texture_spec.7 = -0.5;
                 }
@@ -351,7 +316,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_texture_spec.5 = -0.5;
                     card_texture_spec.6 = -0.5;
                 }
-                (Inactive, false) => {}
+                _ => {}
             }
 
             draw_card(p, card_matrix, card, card_texture_spec);
@@ -359,18 +324,21 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         for (i, piece) in pieces.into_iter().enumerate() {
             let (x, y) = card_relative_piece_coords(i);
+            let half_piece_scale = piece_scale(piece);
 
             let piece_id = piece_id(card_id, i as _);
 
             let mut piece_texture_spec = piece_texture_spec(piece);
 
-            //TODO more precise piece picking
             let on_piece = on_card &&
                 if rotated {
                     //swapping x and y and inverting y is equivalent to rotation by 90 degrees
-                    -card_mouse_y.signum() == x.signum() && card_mouse_x.signum() == y.signum()
+                    (-card_mouse_y - x).abs() <= half_piece_scale &&
+                        (card_mouse_x - y).abs() <= half_piece_scale
+
                 } else {
-                    card_mouse_x.signum() == x.signum() && card_mouse_y.signum() == y.signum()
+                    (card_mouse_x - x).abs() <= half_piece_scale &&
+                        (card_mouse_y - y).abs() <= half_piece_scale
                 };
 
             let button_outcome = match state.turn {
@@ -407,6 +375,130 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 draw_piece(p, card_matrix, piece, x, y, piece_texture_spec);
             };
+        }
+
+        if true {
+            //pieces.len() > 4 {
+            let scale = 0.125;
+
+            let x_offset_amount = 15.0 / 32.0;
+            let y_offset_amount = (ARROW_SIZE + 2.5) / (T_S * scale);
+
+            let forward_x = CARD_RATIO - x_offset_amount;
+            let forward_y = -(1.0 - y_offset_amount);
+
+            let forward_arrow_matrix = mat4x4_mul(
+                &scale_translation(scale, forward_x, forward_y),
+                &card_matrix,
+            );
+
+            let backward_x = -CARD_RATIO + x_offset_amount;
+            let backward_y = forward_y;
+
+            let mut backward_camera_matrix = scale_translation(-scale, backward_x, backward_y);
+
+            backward_camera_matrix[5] *= -1.0;
+
+            let backward_arrow_matrix = mat4x4_mul(&backward_camera_matrix, &card_matrix);
+
+            let mut forward_arrow_texture_spec = (
+                420.0 / T_S,
+                895.0 / T_S,
+                ARROW_SIZE / T_S,
+                ARROW_SIZE / T_S,
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            );
+
+            let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
+
+            let on_forward = on_card &&
+                if rotated {
+                    (-card_mouse_y - forward_x).abs() < scale &&
+                        (card_mouse_x - forward_y).abs() < scale
+                } else {
+                    (card_mouse_x - forward_x).abs() < scale &&
+                        (card_mouse_y - forward_y).abs() < scale
+                };
+
+            let forward_button_outcome = button_logic(
+                &mut state.ui_context,
+                ButtonState {
+                    id: arrow_id(card_id, true),
+                    pointer_inside: on_forward,
+                    mouse_pressed,
+                    mouse_released,
+                },
+            );
+
+            if forward_button_outcome.clicked {
+                println!("clicked");
+            } else {
+                match forward_button_outcome.draw_state {
+                    Pressed => {
+                        forward_arrow_texture_spec.5 = 1.5;
+                        forward_arrow_texture_spec.6 = 1.5;
+                    }
+                    Hover => {
+                        forward_arrow_texture_spec.5 = -1.5;
+                        forward_arrow_texture_spec.7 = -1.5;
+                    }
+                    Inactive => {}
+                }
+            };
+
+            (p.draw_textured_poly_with_matrix)(
+                forward_arrow_matrix,
+                SQUARE_POLY_INDEX,
+                forward_arrow_texture_spec,
+                0,
+            );
+
+            let on_backward = on_card &&
+                if rotated {
+                    (-card_mouse_y - backward_x).abs() < scale &&
+                        (card_mouse_x - backward_y).abs() < scale
+                } else {
+                    (card_mouse_x - backward_x).abs() < scale &&
+                        (card_mouse_y - backward_y).abs() < scale
+                };
+
+            let backward_button_outcome = button_logic(
+                &mut state.ui_context,
+                ButtonState {
+                    id: arrow_id(card_id, false),
+                    pointer_inside: on_backward,
+                    mouse_pressed,
+                    mouse_released,
+                },
+            );
+
+            if backward_button_outcome.clicked {
+                println!("clicked");
+
+            } else {
+                match backward_button_outcome.draw_state {
+                    Pressed => {
+                        backward_arrow_texture_spec.5 = 1.5;
+                        backward_arrow_texture_spec.6 = 1.5;
+                    }
+                    Hover => {
+                        backward_arrow_texture_spec.5 = -1.5;
+                        backward_arrow_texture_spec.7 = -1.5;
+                    }
+                    Inactive => {}
+                }
+            };
+
+            (p.draw_textured_poly_with_matrix)(
+                backward_arrow_matrix,
+                SQUARE_POLY_INDEX,
+                backward_arrow_texture_spec,
+                0,
+            );
         }
 
     }
@@ -467,10 +559,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
 
             if let Some(key) = target_space_coords {
-                let orthogonally_adjacent_filled_spaces =
-                    get_orthogonally_adjacent_filled_spaces(&state.board, space_coords);
+                let valid_targets = get_valid_targets(&state.board, space_coords);
 
-                if orthogonally_adjacent_filled_spaces.contains(&key) {
+                if valid_targets.contains(&key) {
                     if let Occupied(mut entry) = state.board.entry(key) {
                         let mut space = entry.get_mut();
 
@@ -593,6 +684,29 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+const ARROW_SIZE: f32 = 15.0;
+
+fn scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
+    [
+        scale,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        scale,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        x_offest,
+        y_offset,
+        0.0,
+        1.0,
+    ]
+}
+
 fn get_close_enough_grid_coords(world_mouse_x: f32, world_mouse_y: f32) -> Option<(i8, i8)> {
     let closest_grid_coords = from_world_coords((world_mouse_x, world_mouse_y));
 
@@ -633,7 +747,7 @@ fn get_card_spec(grid_coords: &(i8, i8)) -> CardSpec {
 
 use std::collections::HashSet;
 
-fn get_orthogonally_adjacent_filled_spaces(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
+fn get_valid_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
     let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
@@ -700,24 +814,7 @@ fn draw_piece(
 ) {
     let scale = piece_scale(piece);
 
-    let piece_matrix = [
-        scale * 5.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        scale * 5.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        x,
-        y,
-        0.0,
-        1.0,
-    ];
+    let piece_matrix = scale_translation(scale, x, y);
 
     (p.draw_textured_poly_with_matrix)(
         mat4x4_mul(&piece_matrix, &card_matrix),
@@ -886,6 +983,11 @@ fn piece_id(card_id: UiId, offset: UiId) -> UiId {
     card_id + 30_000 + (offset + 500) * 1000
 }
 
+fn arrow_id(card_id: UiId, forward: bool) -> UiId {
+    //assumes |offset| < 500
+    card_id * 2 + 10_000 - if forward { 1 } else { 0 }
+}
+
 
 #[derive(Copy, Clone, Debug)]
 struct ButtonState {
@@ -969,6 +1071,9 @@ const MOUSE_POINTER_SIZE: f32 = 16.0;
 const LARGEST_PIECE_TEXTURE_SIZE: f32 = 65.0 / T_S;
 
 fn piece_scale(piece: Piece) -> f32 {
+    piece_size(piece) * 5.0
+}
+fn piece_size(piece: Piece) -> f32 {
     match piece.pips {
         Pips::One => 33.0 / T_S,
         Pips::Two => 49.0 / T_S,
@@ -977,7 +1082,7 @@ fn piece_scale(piece: Piece) -> f32 {
 }
 
 fn piece_texture_spec(piece: Piece) -> TextureSpec {
-    let size = piece_scale(piece);
+    let size = piece_size(piece);
 
     let (x, y) = match piece.pips {
         Pips::One => (114.0 / T_S, 792.0 / T_S),
