@@ -331,15 +331,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut piece_texture_spec = piece_texture_spec(piece);
 
             let on_piece = on_card &&
-                if rotated {
-                    //swapping x and y and inverting y is equivalent to rotation by 90 degrees
-                    (-card_mouse_y - x).abs() <= half_piece_scale &&
-                        (card_mouse_x - y).abs() <= half_piece_scale
+                point_in_square(
+                    (card_mouse_x, card_mouse_y),
+                    (x, y),
+                    half_piece_scale,
+                    rotated,
+                );
 
-                } else {
-                    (card_mouse_x - x).abs() <= half_piece_scale &&
-                        (card_mouse_y - y).abs() <= half_piece_scale
-                };
 
             let button_outcome = match state.turn {
                 Move => {
@@ -416,13 +414,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
 
             let on_forward = on_card &&
-                if rotated {
-                    (-card_mouse_y - forward_x).abs() < scale &&
-                        (card_mouse_x - forward_y).abs() < scale
-                } else {
-                    (card_mouse_x - forward_x).abs() < scale &&
-                        (card_mouse_y - forward_y).abs() < scale
-                };
+                point_in_square(
+                    (card_mouse_x, card_mouse_y),
+                    (forward_x, forward_y),
+                    scale,
+                    rotated,
+                );
 
             let forward_button_outcome = button_logic(
                 &mut state.ui_context,
@@ -458,13 +455,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             );
 
             let on_backward = on_card &&
-                if rotated {
-                    (-card_mouse_y - backward_x).abs() < scale &&
-                        (card_mouse_x - backward_y).abs() < scale
-                } else {
-                    (card_mouse_x - backward_x).abs() < scale &&
-                        (card_mouse_y - backward_y).abs() < scale
-                };
+                point_in_square(
+                    (card_mouse_x, card_mouse_y),
+                    (backward_x, backward_y),
+                    scale,
+                    rotated,
+                );
 
             let backward_button_outcome = button_logic(
                 &mut state.ui_context,
@@ -684,6 +680,29 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+fn point_in_square(
+    point: (f32, f32),
+    box_center: (f32, f32),
+    square_size: f32,
+    rotated: bool,
+) -> bool {
+    point_in_rect(point, box_center, (square_size, square_size), rotated)
+}
+
+fn point_in_rect(
+    (point_x, point_y): (f32, f32),
+    (box_center_x, box_center_y): (f32, f32),
+    (width, height): (f32, f32),
+    rotated: bool,
+) -> bool {
+    if rotated {
+        //swapping x and y and inverting y is equivalent to rotation by 90 degrees
+        (-point_y - box_center_x).abs() <= height && (point_x - box_center_y).abs() <= width
+    } else {
+        (point_x - box_center_x).abs() <= width && (point_y - box_center_y).abs() <= height
+    }
+}
+
 const ARROW_SIZE: f32 = 15.0;
 
 fn scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
@@ -714,16 +733,12 @@ fn get_close_enough_grid_coords(world_mouse_x: f32, world_mouse_y: f32) -> Optio
 
     let (center_x, center_y) = to_world_coords(closest_grid_coords);
 
-    let (x_distance, y_distance) = (
-        f32::abs(center_x - world_mouse_x),
-        f32::abs(center_y - world_mouse_y),
+    let in_bounds = point_in_rect(
+        (world_mouse_x, world_mouse_y),
+        (center_x, center_y),
+        (CARD_SHORT_RADIUS, CARD_LONG_RADIUS),
+        rotated,
     );
-
-    let in_bounds = if rotated {
-        x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
-    } else {
-        x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
-    };
 
     if in_bounds {
         Some(closest_grid_coords)
