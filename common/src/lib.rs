@@ -112,12 +112,20 @@ impl SpacePieces {
     }
 
     pub fn push(&mut self, piece: Piece) {
+        let len = self.len();
+        if len < MAX_PIECES_PER_SPACE {
+            self.0[len] = Some(piece);
+        }
+    }
+
+    pub fn len(&self) -> usize {
         for i in 0..MAX_PIECES_PER_SPACE {
             if self.0[i].is_none() {
-                self.0[i] = Some(piece);
-                break;
+                return i;
             }
         }
+
+        MAX_PIECES_PER_SPACE
     }
 
     pub fn insert(&mut self, index: usize, piece: Piece) {
@@ -205,6 +213,7 @@ impl Iterator for SpacePiecesIterator {
 pub struct Space {
     pub card: Card,
     pub pieces: SpacePieces,
+    pub offset: u8,
 }
 
 impl Rand for Space {
@@ -221,6 +230,7 @@ impl Rand for Space {
         Space {
             card: rng.gen(),
             pieces,
+            offset: 0,
         }
     }
 }

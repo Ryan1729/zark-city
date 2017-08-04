@@ -118,6 +118,8 @@ fn make_state(mut rng: StdRng) -> State {
 enum Action {
     GrabPiece((i8, i8), usize),
     GrabSpace((i8, i8)),
+    PageBack((i8, i8)),
+    PageForward((i8, i8)),
     NoAction,
 }
 use Action::*;
@@ -284,7 +286,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let mut action = NoAction;
 
-    for (grid_coords, &Space { card, ref pieces }) in state.board.iter() {
+    for (grid_coords,
+         &Space {
+             card,
+             ref pieces,
+             offset: space_offset,
+         }) in state.board.iter()
+    {
         let (card_x, card_y, rotated) = get_card_spec(grid_coords);
 
         let card_matrix = get_card_matrix(&view, (card_x, card_y, rotated));
@@ -339,6 +347,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
 
         for (i, piece) in pieces.into_iter().enumerate() {
+            if i < space_offset as _ || i > (space_offset + PIECES_PER_PAGE - 1) as _ {
+                continue;
+            }
+
             let (x, y) = card_relative_piece_coords(i);
             let half_piece_scale = piece_scale(piece);
 
@@ -392,8 +404,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
         }
 
-        if true {
-            //pieces.len() > 4 {
+        if pieces.len() > PIECES_PER_PAGE as _ {
             let scale = 0.125;
 
             let x_offset_amount = 15.0 / 32.0;
@@ -406,15 +417,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &scale_translation(scale, forward_x, forward_y),
                 &card_matrix,
             );
-
-            let backward_x = -CARD_RATIO + x_offset_amount;
-            let backward_y = forward_y;
-
-            let mut backward_camera_matrix = scale_translation(-scale, backward_x, backward_y);
-
-            backward_camera_matrix[5] *= -1.0;
-
-            let backward_arrow_matrix = mat4x4_mul(&backward_camera_matrix, &card_matrix);
 
             let mut forward_arrow_texture_spec = (
                 420.0 / T_S,
@@ -450,7 +452,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             );
 
             if forward_button_outcome.clicked {
-                println!("clicked");
+                action = PageForward(*grid_coords);
             } else {
                 match forward_button_outcome.draw_state {
                     Pressed => {
@@ -472,52 +474,77 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 0,
             );
 
-            let on_backward = on_card &&
-                point_in_square(
-                    (card_mouse_x, card_mouse_y),
-                    (backward_x, backward_y),
-                    scale,
-                    rotated,
+            if space_offset > 0 {
+                let backward_x = -CARD_RATIO + x_offset_amount;
+                let backward_y = forward_y;
+
+                let mut backward_camera_matrix = scale_translation(-scale, backward_x, backward_y);
+
+                backward_camera_matrix[5] *= -1.0;
+
+                let backward_arrow_matrix = mat4x4_mul(&backward_camera_matrix, &card_matrix);
+
+                let on_backward = on_card &&
+                    point_in_square(
+                        (card_mouse_x, card_mouse_y),
+                        (backward_x, backward_y),
+                        scale,
+                        rotated,
+                    );
+
+                let backward_button_outcome = button_logic(
+                    &mut state.ui_context,
+                    ButtonState {
+                        id: arrow_id(card_id, false),
+                        pointer_inside: on_backward,
+                        mouse_pressed,
+                        mouse_released,
+                        mouse_held,
+                    },
                 );
 
-            let backward_button_outcome = button_logic(
-                &mut state.ui_context,
-                ButtonState {
-                    id: arrow_id(card_id, false),
-                    pointer_inside: on_backward,
-                    mouse_pressed,
-                    mouse_released,
-                    mouse_held,
-                },
-            );
+                if backward_button_outcome.clicked {
+                    action = PageBack(*grid_coords);
 
-            if backward_button_outcome.clicked {
-                println!("clicked");
-
-            } else {
-                match backward_button_outcome.draw_state {
-                    Pressed => {
-                        backward_arrow_texture_spec.5 = 1.5;
-                        backward_arrow_texture_spec.6 = 1.5;
+                } else {
+                    match backward_button_outcome.draw_state {
+                        Pressed => {
+                            backward_arrow_texture_spec.5 = 1.5;
+                            backward_arrow_texture_spec.6 = 1.5;
+                        }
+                        Hover => {
+                            backward_arrow_texture_spec.5 = -1.5;
+                            backward_arrow_texture_spec.7 = -1.5;
+                        }
+                        Inactive => {}
                     }
-                    Hover => {
-                        backward_arrow_texture_spec.5 = -1.5;
-                        backward_arrow_texture_spec.7 = -1.5;
-                    }
-                    Inactive => {}
-                }
-            };
+                };
 
-            (p.draw_textured_poly_with_matrix)(
-                backward_arrow_matrix,
-                SQUARE_POLY_INDEX,
-                backward_arrow_texture_spec,
-                0,
-            );
+                (p.draw_textured_poly_with_matrix)(
+                    backward_arrow_matrix,
+                    SQUARE_POLY_INDEX,
+                    backward_arrow_texture_spec,
+                    0,
+                );
+            }
         }
-
     }
 
+    match action {
+        PageBack(space_coords) => {
+            if let Occupied(mut entry) = state.board.entry(space_coords) {
+                let mut space = entry.get_mut();
+                space.offset = space.offset.saturating_sub(PIECES_PER_PAGE);
+            }
+        }
+        PageForward(space_coords) => {
+            if let Occupied(mut entry) = state.board.entry(space_coords) {
+                let mut space = entry.get_mut();
+                space.offset = space.offset.saturating_add(PIECES_PER_PAGE);
+            }
+        }
+        _ => {}
+    }
 
     let t = state.turn;
 
@@ -552,7 +579,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let close_enough_grid_coords =
                 get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
-
+            println!("close_enough_grid_coords {:?}", close_enough_grid_coords);
             let button_outcome = if close_enough_grid_coords.is_some() {
                 button_logic(
                     &mut state.ui_context,
@@ -576,8 +603,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             if let Some(key) = target_space_coords {
                 let valid_targets = get_valid_targets(&state.board, space_coords);
-
+                println!("{:?}", valid_targets);
                 if valid_targets.contains(&key) {
+                    println!("b");
                     if let Occupied(mut entry) = state.board.entry(key) {
                         let mut space = entry.get_mut();
 
@@ -607,7 +635,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         FlySelect(old_coords, space) => {
-            let Space { card, pieces } = space;
+            let Space {
+                card,
+                pieces,
+                offset: space_offset,
+            } = space;
 
             let adjacent_empty_spaces = {
                 let mut spaces = get_all_adjacent_empty_spaces(&state.board);
@@ -653,6 +685,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             draw_card(p, card_matrix, card.texture_spec());
 
             for (i, piece) in pieces.into_iter().enumerate() {
+                if i < space_offset as _ || i > (space_offset + PIECES_PER_PAGE) as _ {
+                    continue;
+                }
+
                 let (x, y) = card_relative_piece_coords(i);
 
                 draw_piece(p, card_matrix, piece, x, y, piece_texture_spec(piece));
@@ -701,6 +737,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     false
 }
 
+const PIECES_PER_PAGE: u8 = 4;
+
 fn point_in_square(
     point: (f32, f32),
     box_center: (f32, f32),
@@ -710,6 +748,8 @@ fn point_in_square(
     point_in_rect(point, box_center, (square_size, square_size), rotated)
 }
 
+//FIXME this only seems to work if (point_x, point_y) is (card_mouse_x, card_mouse_y)
+//Either this or card_mouse_x, card_mouse_y or world_mouse_x, world_mouse_y is messed up
 fn point_in_rect(
     (point_x, point_y): (f32, f32),
     (box_center_x, box_center_y): (f32, f32),
@@ -754,12 +794,16 @@ fn get_close_enough_grid_coords(world_mouse_x: f32, world_mouse_y: f32) -> Optio
 
     let (center_x, center_y) = to_world_coords(closest_grid_coords);
 
-    let in_bounds = point_in_rect(
-        (world_mouse_x, world_mouse_y),
-        (center_x, center_y),
-        (CARD_SHORT_RADIUS, CARD_LONG_RADIUS),
-        rotated,
+    let (x_distance, y_distance) = (
+        f32::abs(center_x - world_mouse_x),
+        f32::abs(center_y - world_mouse_y),
     );
+
+    let in_bounds = if rotated {
+        x_distance < CARD_LONG_RADIUS && y_distance < CARD_SHORT_RADIUS
+    } else {
+        x_distance < CARD_SHORT_RADIUS && y_distance < CARD_LONG_RADIUS
+    };
 
     if in_bounds {
         Some(closest_grid_coords)
@@ -1011,12 +1055,12 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
 fn card_id(card_x: UiId, card_y: UiId) -> UiId {
     //assumss| card_x| and |card_y| will both stay below 1000
-    10_000 + (card_x + 1000) * 1000 + card_y
+    10_000 + (card_x + 1000) * 1000 + card_y + card_x
 }
 
 fn piece_id(card_id: UiId, offset: UiId) -> UiId {
     //assumes |offset| < 500
-    card_id + 30_000 + (offset + 500) * 1000
+    card_id + 30_000 + (offset * 500) * 1000
 }
 
 fn arrow_id(card_id: UiId, forward: bool) -> UiId {
