@@ -319,7 +319,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 _ => {}
             }
 
-            draw_card(p, card_matrix, card, card_texture_spec);
+            draw_card(p, card_matrix, card_texture_spec);
         }
 
         for (i, piece) in pieces.into_iter().enumerate() {
@@ -629,7 +629,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 Default::default()
             };
 
-            draw_card(p, card_matrix, card, card.texture_spec());
+            draw_card(p, card_matrix, card.texture_spec());
 
             for (i, piece) in pieces.into_iter().enumerate() {
                 let (x, y) = card_relative_piece_coords(i);
@@ -839,7 +839,7 @@ fn draw_piece(
     );
 }
 
-fn draw_card(p: &Platform, card_matrix: [f32; 16], card: Card, texture_spec: TextureSpec) {
+fn draw_card(p: &Platform, card_matrix: [f32; 16], texture_spec: TextureSpec) {
     (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, 0);
 }
 fn draw_empty_space(p: &Platform, card_matrix: [f32; 16]) {

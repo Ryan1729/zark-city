@@ -132,7 +132,7 @@ struct Resources {
     texture_shader: TextureShader,
     frame_buffers: FrameBufferHandles,
     frame_buffer_textures: FrameBufferHandles,
-    frame_buffer_render_buffers: FrameBufferHandles,
+    // frame_buffer_render_buffers: FrameBufferHandles,
 }
 
 impl Resources {
@@ -294,6 +294,10 @@ impl Resources {
             make_texture_from_png(&ctx, "images/texture1.png"),
         ];
 
+        debug_assert!(frame_buffers[1] != 0);
+        debug_assert!(frame_buffer_textures[1] != 0);
+        debug_assert!(frame_buffer_render_buffers[1] != 0);
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -304,7 +308,7 @@ impl Resources {
             textures,
             frame_buffers,
             frame_buffer_textures,
-            frame_buffer_render_buffers,
+            // frame_buffer_render_buffers,
         };
 
         result.set_verts(app.get_vert_vecs());
