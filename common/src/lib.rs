@@ -688,9 +688,37 @@ pub fn get_projection(spec: &ProjectionSpec) -> [f32; 16] {
     }
 }
 
+pub fn card_id((x, y): (i8, i8)) -> UiId {
+    10_000 + (x as UiId + 1000) * 1000 + y as UiId + x as UiId
+}
+
+pub fn piece_id(card_id: UiId, offset: u8) -> UiId {
+    (card_id + 30_000 + (offset as UiId * 500) * 1000) as _
+}
+
+pub fn arrow_id(card_id: UiId, forward: bool) -> UiId {
+    card_id * 2 + 10_000 - if forward { 1 } else { 0 }
+}
+
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
+
+#[cfg(test)]
+mod id_tests {
+    use ::*;
+
+    quickcheck! {
+        fn uniqueness(coords: (i8, i8), offset: u8, forward: bool) -> bool {
+            let card_id = card_id(coords);
+            let piece_id = piece_id(card_id, offset);
+            let arrow_id = arrow_id(card_id, forward);
+
+            (card_id != piece_id) && (piece_id != arrow_id) && (card_id != arrow_id)
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod mat4x4_tests {
@@ -846,7 +874,7 @@ mod mat4x4_tests {
                 };
             }
             println!("error {}", error);
-            error <= 0.01
+            error <= 0.25
         }
     }
 

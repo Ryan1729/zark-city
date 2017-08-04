@@ -297,7 +297,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let card_matrix = get_card_matrix(&view, (card_x, card_y, rotated));
 
-        let card_id = card_id(card_x as _, card_y as _);
+        let card_id = card_id(*grid_coords);
 
         let mut card_texture_spec = card.texture_spec();
 
@@ -354,7 +354,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let (x, y) = card_relative_piece_coords(i);
             let half_piece_scale = piece_scale(piece);
 
-            let piece_id = piece_id(card_id, i as _);
+            debug_assert!(i <= 255);
+            let piece_id = piece_id(card_id, i as u8);
 
             let mut piece_texture_spec = piece_texture_spec(piece);
 
@@ -1052,22 +1053,6 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
     (p.draw_layer)(1, state.hud_alpha);
 }
-
-fn card_id(card_x: UiId, card_y: UiId) -> UiId {
-    //assumss| card_x| and |card_y| will both stay below 1000
-    10_000 + (card_x + 1000) * 1000 + card_y + card_x
-}
-
-fn piece_id(card_id: UiId, offset: UiId) -> UiId {
-    //assumes |offset| < 500
-    card_id + 30_000 + (offset * 500) * 1000
-}
-
-fn arrow_id(card_id: UiId, forward: bool) -> UiId {
-    //assumes |offset| < 500
-    card_id * 2 + 10_000 - if forward { 1 } else { 0 }
-}
-
 
 #[derive(Copy, Clone, Debug)]
 struct ButtonState {
