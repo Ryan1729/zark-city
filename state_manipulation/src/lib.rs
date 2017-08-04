@@ -123,6 +123,7 @@ enum Action {
 use Action::*;
 
 const FADE_RATE: f32 = 1.0 / 24.0;
+const TRANSLATION_SCALE: f32 = 0.0625;
 
 #[no_mangle]
 //returns true if quit requested
@@ -162,16 +163,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 (p.set_verts)(get_vert_vecs());
             }
             Event::KeyDown(Keycode::Up) => {
-                state.cam_y += 0.0625;
+                state.cam_y += state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Down) => {
-                state.cam_y -= 0.0625;
+                state.cam_y -= state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Right) => {
-                state.cam_x += 0.0625;
+                state.cam_x += state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Left) => {
-                state.cam_x -= 0.0625;
+                state.cam_x -= state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Num0) => {
                 state.cam_x = 0.0;
@@ -183,6 +184,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             Event::KeyDown(Keycode::S) => {
                 state.zoom /= 1.25;
+                if state.zoom == 0.0 {
+                    state.zoom = std::f32::MIN_POSITIVE / TRANSLATION_SCALE;
+                }
             }
             Event::MouseMove((x, y)) => {
                 state.mouse_pos = (x as f32, y as f32);
