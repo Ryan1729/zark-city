@@ -101,6 +101,7 @@ fn make_state(mut rng: StdRng) -> State {
         mouse_pos: (400.0, 300.0),
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
+        mouse_held: false,
         turn: Move,
         deck,
         pile: Vec::new(),
@@ -206,6 +207,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
+    if mouse_released != mouse_pressed {
+        if mouse_released {
+            state.mouse_held = false;
+        } else {
+            state.mouse_held = true;
+        }
+    }
+
+    let mouse_held = state.mouse_held;
+
     state.ui_context.frame_init();
 
     state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > 0.7 {
@@ -293,6 +304,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 pointer_inside: on_card,
                 mouse_pressed,
                 mouse_released,
+                mouse_held,
             },
         );
 
@@ -348,6 +360,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             pointer_inside: on_piece,
                             mouse_pressed,
                             mouse_released,
+                            mouse_held,
                         },
                     )
                 }
@@ -428,6 +441,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     pointer_inside: on_forward,
                     mouse_pressed,
                     mouse_released,
+                    mouse_held,
                 },
             );
 
@@ -469,6 +483,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     pointer_inside: on_backward,
                     mouse_pressed,
                     mouse_released,
+                    mouse_held,
                 },
             );
 
@@ -542,6 +557,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         pointer_inside: true,
                         mouse_pressed,
                         mouse_released,
+                        mouse_held,
                     },
                 )
             } else {
@@ -623,6 +639,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         pointer_inside: true,
                         mouse_pressed,
                         mouse_released,
+                        mouse_held,
                     },
                 )
             } else {
@@ -1010,6 +1027,7 @@ struct ButtonState {
     pointer_inside: bool,
     mouse_pressed: bool,
     mouse_released: bool,
+    mouse_held: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1061,13 +1079,14 @@ fn button_logic(context: &mut UIContext, button_state: ButtonState) -> ButtonOut
         context.set_next_hot(id);
     }
 
-    let draw_state = if context.active == id && button_state.mouse_pressed {
-        Pressed
-    } else if context.hot == id {
-        Hover
-    } else {
-        Inactive
-    };
+    let draw_state =
+        if context.active == id && (button_state.mouse_held || button_state.mouse_pressed) {
+            Pressed
+        } else if context.hot == id {
+            Hover
+        } else {
+            Inactive
+        };
 
     ButtonOutcome {
         clicked,

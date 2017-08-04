@@ -50,6 +50,7 @@ pub struct State {
     pub mouse_pos: (f32, f32),
     pub window_wh: (f32, f32),
     pub ui_context: UIContext,
+    pub mouse_held: bool,
     pub turn: Turn,
     pub deck: Vec<Card>,
     pub pile: Vec<Card>,
