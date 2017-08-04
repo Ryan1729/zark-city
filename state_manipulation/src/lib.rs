@@ -360,7 +360,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut piece_texture_spec = piece_texture_spec(piece);
 
             let on_piece = on_card &&
-                point_in_square(
+                point_in_square_on_card(
                     (card_mouse_x, card_mouse_y),
                     (x, y),
                     half_piece_scale,
@@ -434,7 +434,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
 
             let on_forward = on_card &&
-                point_in_square(
+                point_in_square_on_card(
                     (card_mouse_x, card_mouse_y),
                     (forward_x, forward_y),
                     scale,
@@ -486,7 +486,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 let backward_arrow_matrix = mat4x4_mul(&backward_camera_matrix, &card_matrix);
 
                 let on_backward = on_card &&
-                    point_in_square(
+                    point_in_square_on_card(
                         (card_mouse_x, card_mouse_y),
                         (backward_x, backward_y),
                         scale,
@@ -740,28 +740,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 const PIECES_PER_PAGE: u8 = 4;
 
-fn point_in_square(
-    point: (f32, f32),
-    box_center: (f32, f32),
-    square_size: f32,
-    rotated: bool,
-) -> bool {
-    point_in_rect(point, box_center, (square_size, square_size), rotated)
-}
-
-//FIXME this only seems to work if (point_x, point_y) is (card_mouse_x, card_mouse_y)
-//Either this or card_mouse_x, card_mouse_y or world_mouse_x, world_mouse_y is messed up
-fn point_in_rect(
+fn point_in_square_on_card(
     (point_x, point_y): (f32, f32),
     (box_center_x, box_center_y): (f32, f32),
-    (width, height): (f32, f32),
+    square_size: f32,
     rotated: bool,
 ) -> bool {
     if rotated {
         //swapping x and y and inverting y is equivalent to rotation by 90 degrees
-        (-point_y - box_center_x).abs() <= height && (point_x - box_center_y).abs() <= width
+        //This trick appears to only works with a square
+        (-point_y - box_center_x).abs() <= square_size &&
+            (point_x - box_center_y).abs() <= square_size
     } else {
-        (point_x - box_center_x).abs() <= width && (point_y - box_center_y).abs() <= height
+        (point_x - box_center_x).abs() <= square_size &&
+            (point_y - box_center_y).abs() <= square_size
     }
 }
 
