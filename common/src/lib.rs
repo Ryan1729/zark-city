@@ -145,7 +145,20 @@ impl SpacePieces {
 
         self.0[index] = Some(piece)
     }
+
+    pub fn get_mut_if_present(&mut self, index: usize) -> Option<&mut Piece> {
+        if index >= MAX_PIECES_PER_SPACE {
+            return None;
+        }
+
+        match self.0[index] {
+            Some(ref mut piece) => Some(piece),
+            None => None,
+        }
+    }
 }
+
+
 
 impl fmt::Debug for SpacePieces {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -290,6 +303,15 @@ pub enum Pips {
     One,
     Two,
     Three,
+}
+
+impl Pips {
+    pub fn higher(&self) -> Self {
+        match *self {
+            Pips::One => Pips::Two,
+            _ => Pips::Three,
+        }
+    }
 }
 
 impl AllValues for Pips {

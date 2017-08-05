@@ -4,6 +4,7 @@ extern crate common;
 use common::*;
 use common::Projection::*;
 use common::Turn::*;
+use common::Pips::*;
 
 use std::default::Default;
 
@@ -102,7 +103,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Move,
+        turn: Grow,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -116,8 +117,8 @@ fn make_state(mut rng: StdRng) -> State {
 }
 
 enum Action {
-    GrabPiece((i8, i8), usize),
-    GrabSpace((i8, i8)),
+    SelectPiece((i8, i8), usize),
+    SelectSpace((i8, i8)),
     PageBack((i8, i8)),
     PageForward((i8, i8)),
     NoAction,
@@ -321,7 +322,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         );
 
         if button_outcome.clicked {
-            action = GrabSpace(grid_coords.clone());
+            action = SelectSpace(grid_coords.clone());
         } else {
             let highlight = if let MoveSelect(piece_pickup_coords, _, _) = state.turn {
                 let valid_targets = get_valid_targets(&state.board, piece_pickup_coords);
@@ -369,7 +370,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
             let button_outcome = match state.turn {
-                Move => {
+                Move | Grow => {
                     button_logic(
                         &mut state.ui_context,
                         ButtonState {
@@ -385,7 +386,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
 
             if button_outcome.clicked {
-                action = GrabPiece(grid_coords.clone(), i);
+                action = SelectPiece(grid_coords.clone(), i);
             } else {
                 match button_outcome.draw_state {
                     Pressed => {
@@ -553,11 +554,31 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         DrawInitialCard => {}
         SelectTurnOption => {}
         DrawThree => {}
-        Grow => {}
+        Grow => {
+            if let SelectPiece(space_coords, piece_index) = action {
+                println!("Grow", );
+                if let Occupied(mut entry) = state.board.entry(space_coords) {
+                    let mut space = entry.get_mut();
+                    if let Some(piece) = space.pieces.get_mut_if_present(piece_index) {
+                        match piece.pips {
+                            One | Two => {
+                                piece.pips = piece.pips.higher();
+
+                                //TODO real target turn
+                                state.turn = Grow;
+                            }
+                            Three => {
+                                //TODO indicate illegal move
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Spawn => {}
         Build => {}
         Move => {
-            if let GrabPiece(space_coords, piece_index) = action {
+            if let SelectPiece(space_coords, piece_index) = action {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
                     let mut space = entry.get_mut();
                     if let Some(piece) = space.pieces.take_if_present(piece_index) {
@@ -629,7 +650,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         ConvertSlashDemolish => {}
         Fly => {
-            if let GrabSpace(key) = action {
+            if let SelectSpace(key) = action {
                 if let Some(space) = state.board.remove(&key) {
                     state.turn = FlySelect(key, space);
                 }
