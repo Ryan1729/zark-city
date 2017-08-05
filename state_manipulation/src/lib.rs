@@ -65,6 +65,10 @@ fn make_state(mut rng: StdRng) -> State {
 
     rng.shuffle(deck.as_mut_slice());
 
+    debug_assert!(deck.len() > MAX_PLAYERS * 3, "Not enough cards!");
+
+    let cpu_players_count = rng.gen_range(1, MAX_PLAYERS);
+
     let mut pile = Vec::new();
     let player_hand;
     let mut cpu_hands;
@@ -73,15 +77,12 @@ fn make_state(mut rng: StdRng) -> State {
         let pile_ref = &mut pile;
         let rng_ref = &mut rng;
 
-        //WE assume there are enough cards in the deck at the start
-
         player_hand = vec![
             deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
             deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
             deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
         ];
 
-        let cpu_players_count = rng_ref.gen_range(1, 5);
         cpu_hands = Vec::new();
 
         for _ in 0..cpu_players_count {
@@ -91,6 +92,23 @@ fn make_state(mut rng: StdRng) -> State {
                 deal_parts(deck_ref, pile_ref, rng_ref).unwrap(),
             ]);
         }
+    }
+
+    let mut colour_deck = PieceColour::all_values();
+
+    rng.shuffle(colour_deck.as_mut_slice());
+
+    debug_assert!(
+        colour_deck.len() >= MAX_PLAYERS,
+        "Not enough piece colours!"
+    );
+
+    let player_stash = Stash::full(colour_deck.pop().unwrap());
+
+    let mut cpu_stashes = Vec::new();
+
+    for _ in 0..cpu_players_count {
+        cpu_stashes.push(Stash::full(colour_deck.pop().unwrap()));
     }
 
     let mut state = State {
@@ -108,6 +126,8 @@ fn make_state(mut rng: StdRng) -> State {
         pile: Vec::new(),
         player_hand,
         cpu_hands,
+        player_stash,
+        cpu_stashes,
         hud_alpha: 1.0,
     };
 
@@ -1048,10 +1068,13 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         let piece_colour = PieceColour::Blue;
 
+        let colour_offset = f32::from(piece_colour);
+        let texture_index = i32::from(piece_colour);
+
         let piece_texture_spec = (
             3.0 * CARD_TEXTURE_WIDTH,
             4.0 * CARD_TEXTURE_HEIGHT +
-                (f32::from(piece_colour) * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+                (colour_offset * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
             TOOLTIP_TEXTURE_WIDTH,
             TOOLTIP_TEXTURE_HEIGHT,
             0,
@@ -1171,15 +1194,19 @@ fn piece_texture_spec(piece: Piece) -> TextureSpec {
     };
 
 
-    let colour_offset = LARGEST_PIECE_TEXTURE_SIZE *
-        match piece.colour {
-            PieceColour::Red => 0.0,
-            PieceColour::Yellow => 1.0,
-            PieceColour::Green => 2.0,
-            PieceColour::Blue => 3.0,
-        };
+    let colour_offset = LARGEST_PIECE_TEXTURE_SIZE * f32::from(piece.colour);
 
-    (x, y + colour_offset, size, size, 0, 0.0, 0.0, 0.0, 0.0)
+    (
+        x,
+        y + colour_offset,
+        size,
+        size,
+        i32::from(piece.colour),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
 }
 
 fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {

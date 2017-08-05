@@ -6,7 +6,6 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 
 # TODO
 * Turn options
-  * Grow
   * Build
   * ConvertSlashDemolish
   * Hatch

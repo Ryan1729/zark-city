@@ -56,7 +56,101 @@ pub struct State {
     pub pile: Vec<Card>,
     pub player_hand: Vec<Card>,
     pub cpu_hands: Vec<Vec<Card>>,
+    pub player_stash: Stash,
+    pub cpu_stashes: Vec<Stash>,
     pub hud_alpha: f32,
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub struct Stash {
+    pub colour: PieceColour,
+    pub one_pip: PiecesLeft,
+    pub two_pip: PiecesLeft,
+    pub three_pip: PiecesLeft,
+}
+
+impl Stash {
+    pub fn add(&mut self, piece: Piece) {
+        debug_assert!(
+            self.colour == piece.colour,
+            "Attempted to add a {:?} piece to a {:?} stash!",
+            piece.colour,
+            self.colour
+        );
+
+        self[piece.pips] = self[piece.pips].higher();
+    }
+    pub fn remove(&mut self, pips: Pips) -> Option<Piece> {
+        if self[pips] == NoneLeft {
+            None
+        } else {
+            self[pips] = self[pips].lower();
+
+            Some(Piece {
+                colour: self.colour,
+                pips,
+            })
+        }
+    }
+
+    pub fn full(colour: PieceColour) -> Self {
+        Stash {
+            colour,
+            one_pip: ThreeLeft,
+            two_pip: ThreeLeft,
+            three_pip: ThreeLeft,
+        }
+    }
+}
+
+use std::ops::{Index, IndexMut};
+
+impl Index<Pips> for Stash {
+    type Output = PiecesLeft;
+
+    fn index<'a>(&'a self, index: Pips) -> &'a PiecesLeft {
+        match index {
+            Pips::One => &self.one_pip,
+            Pips::Two => &self.one_pip,
+            Pips::Three => &self.one_pip,
+        }
+    }
+}
+
+impl IndexMut<Pips> for Stash {
+    fn index_mut<'a>(&'a mut self, index: Pips) -> &'a mut PiecesLeft {
+        match index {
+            Pips::One => &mut self.one_pip,
+            Pips::Two => &mut self.two_pip,
+            Pips::Three => &mut self.three_pip,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum PiecesLeft {
+    NoneLeft,
+    OneLeft,
+    TwoLeft,
+    ThreeLeft,
+}
+use PiecesLeft::*;
+
+impl PiecesLeft {
+    fn higher(&self) -> PiecesLeft {
+        match *self {
+            NoneLeft => OneLeft,
+            OneLeft => TwoLeft,
+            TwoLeft | ThreeLeft => ThreeLeft,
+        }
+    }
+    fn lower(&self) -> PiecesLeft {
+        match *self {
+            NoneLeft | OneLeft => NoneLeft,
+            TwoLeft => OneLeft,
+            ThreeLeft => TwoLeft,
+        }
+    }
 }
 
 pub type Board = HashMap<(i8, i8), Space>;
@@ -276,12 +370,13 @@ pub enum PieceColour {
     Yellow,
     Green,
     Blue,
+    Black,
 }
 use PieceColour::*;
 
 impl AllValues for PieceColour {
     fn all_values() -> Vec<PieceColour> {
-        vec![Red, Yellow, Green, Blue]
+        vec![Red, Yellow, Green, Blue, Black]
     }
 }
 
@@ -294,6 +389,18 @@ impl From<PieceColour> for f32 {
             Yellow => 1.0,
             Green => 2.0,
             Blue => 3.0,
+            Black => 0.0,
+        }
+    }
+}
+impl From<PieceColour> for i32 {
+    fn from(colour: PieceColour) -> Self {
+        match colour {
+            Red => 0,
+            Yellow => 0,
+            Green => 0,
+            Blue => 0,
+            Black => 1,
         }
     }
 }
