@@ -577,21 +577,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Grow => {
             if let SelectPiece(space_coords, piece_index) = action {
                 println!("Grow", );
-                if let Occupied(mut entry) = state.board.entry(space_coords) {
-                    let mut space = entry.get_mut();
-                    if let Some(piece) = space.pieces.get_mut_if_present(piece_index) {
-                        match piece.pips {
-                            One | Two => {
-                                piece.pips = piece.pips.higher();
-
-                                //TODO real target turn
-                                state.turn = Grow;
-                            }
-                            Three => {
-                                //TODO indicate illegal move
-                            }
-                        }
-                    }
+                if grow_if_available(
+                    space_coords,
+                    piece_index,
+                    &mut state.board,
+                    &mut state.player_stash,
+                )
+                {
+                    //TODO real target turn
+                    state.turn = Grow;
                 }
             }
         }
@@ -775,6 +769,41 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
+
+    false
+}
+
+fn grow_if_available(
+    space_coords: (i8, i8),
+    piece_index: usize,
+    board: &mut Board,
+    stash: &mut Stash,
+) -> bool {
+    if let Occupied(mut entry) = board.entry(space_coords) {
+        let mut space = entry.get_mut();
+        if let Some(piece) = space.pieces.get_mut_if_present(piece_index) {
+            if piece.colour == stash.colour {
+                match piece.pips {
+                    One | Two => {
+                        if let Some(larger_piece) = stash.remove(piece.pips.higher()) {
+                            let temp = piece.clone();
+                            *piece = larger_piece;
+                            stash.add(temp);
+
+                            println!("{:?}", stash);
+
+                            return true;
+                        }
+                    }
+                    Three => {
+                        //TODO indicate illegal move
+                    }
+                }
+            } else {
+                //TODO indicate illegal move
+            }
+        }
+    }
 
     false
 }

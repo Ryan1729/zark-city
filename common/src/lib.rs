@@ -111,8 +111,8 @@ impl Index<Pips> for Stash {
     fn index<'a>(&'a self, index: Pips) -> &'a PiecesLeft {
         match index {
             Pips::One => &self.one_pip,
-            Pips::Two => &self.one_pip,
-            Pips::Three => &self.one_pip,
+            Pips::Two => &self.two_pip,
+            Pips::Three => &self.three_pip,
         }
     }
 }
