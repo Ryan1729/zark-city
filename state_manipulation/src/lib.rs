@@ -123,7 +123,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Spawn,
+        turn: Build,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -560,6 +560,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
+    match draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y)) {
+        NoAction => {}
+        otherwise => {
+            action = otherwise;
+        }
+    };
+
     match action {
         PageBack(space_coords) => {
             if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -781,8 +788,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
     };
-
-    draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
 
     false
 }
@@ -1051,7 +1056,14 @@ fn get_card_matrix(view: &[f32; 16], (card_x, card_y, rotated): CardSpec) -> [f3
     mat4x4_mul(&world_matrix, view)
 }
 
-fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_y): (f32, f32)) {
+fn draw_hud(
+    p: &Platform,
+    state: &mut State,
+    aspect_ratio: f32,
+    (mouse_x, mouse_y): (f32, f32),
+) -> Action {
+    let mut result = NoAction;
+
     let layer = 1;
 
     let near = 0.5;
@@ -1066,7 +1078,7 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
     let half_height = scale * 2.0;
     let half_width = half_height * aspect_ratio;
 
-    let hud_view = get_projection(&ProjectionSpec {
+    let projection_spec = ProjectionSpec {
         top,
         bottom,
         left,
@@ -1075,18 +1087,49 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
         far,
         projection: Perspective,
         // projection: Orthographic,
-    });
+    };
 
-    for (i, card) in state.player_hand.iter().enumerate() {
+    let hud_view = get_projection(&projection_spec);
+    let inverse_hud_view = get_projection(&projection_spec.inverse());
+
+    let (hud_mouse_x, hud_mouse_y, _, _) =
+        mat4x4_vector_mul_divide(&inverse_hud_view, mouse_x, mouse_y, 0.0, 1.0);
+
+    let card_scale = 3.0;
+
+    let hand_length = state.player_hand.len();
+
+    let mut card_coords = vec![(0.0, 0.0); hand_length];
+
+    let mut highlighted_index = None;
+
+    for i in (0..hand_length).rev() {
         let (card_x, card_y) = (-half_width * (13.0 - i as f32) / 16.0, -half_height * 0.75);
 
+        card_coords[i] = (card_x, card_y);
+
+        if highlighted_index.is_none() {
+            let (card_mouse_x, card_mouse_y) = (hud_mouse_x - card_x, hud_mouse_y - card_y);
+
+            let on_card = (card_mouse_x).abs() <= CARD_RATIO * card_scale &&
+                (card_mouse_y).abs() <= card_scale;
+
+            if on_card {
+                highlighted_index = Some(i);
+            }
+        }
+    }
+
+    for (i, card) in state.player_hand.iter().enumerate() {
+        let (card_x, card_y) = card_coords[i];
+
         let hand_camera_matrix = [
-            3.0,
+            card_scale,
             0.0,
             0.0,
             0.0,
             0.0,
-            3.0,
+            card_scale,
             0.0,
             0.0,
             0.0,
@@ -1101,7 +1144,12 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
-        let texture_spec = card.texture_spec();
+        let mut texture_spec = card.texture_spec();
+
+        if highlighted_index == Some(i) {
+            texture_spec.5 = -0.5;
+            texture_spec.7 = -0.5;
+        }
 
         (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, layer);
     }
@@ -1176,6 +1224,8 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
     }
 
     (p.draw_layer)(1, state.hud_alpha);
+
+    result
 }
 
 fn draw_stash(p: &Platform, matrix: [f32; 16], stash: &Stash, layer: usize) {

@@ -689,7 +689,7 @@ pub struct ProjectionSpec {
 }
 
 impl ProjectionSpec {
-    fn inverse(&self) -> Self {
+    pub fn inverse(&self) -> Self {
         ProjectionSpec {
             top: self.top,
             bottom: self.bottom,
@@ -727,7 +727,7 @@ impl AllValues for Projection {
 all_values_rand_impl!(Projection);
 
 impl Projection {
-    fn inverse(&self) -> Self {
+    pub fn inverse(&self) -> Self {
         match *self {
             Perspective => InversePerspective,
             InversePerspective => Perspective,
