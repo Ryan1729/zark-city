@@ -246,7 +246,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     state.ui_context.frame_init();
 
-    state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > 0.7 {
+    state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > 0.675 {
         FADE_RATE
     } else {
         -FADE_RATE
@@ -576,7 +576,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         DrawThree => {}
         Grow => {
             if let SelectPiece(space_coords, piece_index) = action {
-                println!("Grow", );
                 if grow_if_available(
                     space_coords,
                     piece_index,
@@ -615,7 +614,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let close_enough_grid_coords =
                 get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
-            println!("close_enough_grid_coords {:?}", close_enough_grid_coords);
+
             let button_outcome = if close_enough_grid_coords.is_some() {
                 button_logic(
                     &mut state.ui_context,
@@ -639,9 +638,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             if let Some(key) = target_space_coords {
                 let valid_targets = get_valid_targets(&state.board, space_coords);
-                println!("{:?}", valid_targets);
+
                 if valid_targets.contains(&key) {
-                    println!("b");
+
                     if let Occupied(mut entry) = state.board.entry(key) {
                         let mut space = entry.get_mut();
 
@@ -786,11 +785,10 @@ fn grow_if_available(
                 match piece.pips {
                     One | Two => {
                         if let Some(larger_piece) = stash.remove(piece.pips.higher()) {
+
                             let temp = piece.clone();
                             *piece = larger_piece;
                             stash.add(temp);
-
-                            println!("{:?}", stash);
 
                             return true;
                         }
@@ -1067,10 +1065,35 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
-        let mut texture_spec = card.texture_spec();
+        let texture_spec = card.texture_spec();
 
         (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, layer);
     }
+
+    let (stash_x, stash_y) = (half_width * 0.75, -half_height * 25.0 / 32.0);
+
+    let stash_camera_matrix = [
+        3.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        3.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        stash_x,
+        stash_y,
+        0.0,
+        1.0,
+    ];
+
+    let stash_matrix = mat4x4_mul(&stash_camera_matrix, &hud_view);
+
+    draw_stash(p, stash_matrix, &state.player_stash, layer);
 
     if false {
         let mouse_camera_matrix = [
@@ -1117,6 +1140,57 @@ fn draw_hud(p: &Platform, state: &mut State, aspect_ratio: f32, (mouse_x, mouse_
     }
 
     (p.draw_layer)(1, state.hud_alpha);
+}
+
+fn draw_stash(p: &Platform, matrix: [f32; 16], stash: &Stash, layer: usize) {
+    let pips_vec = vec![Pips::Three, Pips::Two, Pips::One];
+
+    for (pile_index, &pips) in pips_vec.iter().enumerate() {
+        let poly_index = match pips {
+            Pips::One => 3,
+            Pips::Two => 4,
+            Pips::Three => 5,
+        };
+
+        let piece = Piece {
+            colour: stash.colour,
+            pips,
+        };
+
+        let scale = piece_scale(piece) * 2.0;
+
+        for i in 0..u8::from(stash[pips]) {
+            //this includes a 90 degree rotation
+            let camera_matrix = [
+                0.0,
+                scale,
+                0.0,
+                0.0,
+                -scale,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                (pile_index as f32 * 1.5) - (0.625 / scale),
+                (i as f32 * scale) + (pile_index as f32 * -15.0 / 64.0),
+                0.0,
+                1.0,
+            ];
+
+            let texture_spec = stash_piece_texture_spec(&piece);
+
+            (p.draw_textured_poly_with_matrix)(
+                mat4x4_mul(&camera_matrix, &matrix),
+                poly_index,
+                texture_spec,
+                layer,
+            );
+        }
+    }
+
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1238,6 +1312,34 @@ fn piece_texture_spec(piece: Piece) -> TextureSpec {
     )
 }
 
+
+fn stash_piece_texture_spec(piece: &Piece) -> TextureSpec {
+    let (x, y) = match piece.pips {
+        Pips::One => (320.0 / T_S, 792.0 / T_S),
+        Pips::Two => (246.0 / T_S, 776.0 / T_S),
+        Pips::Three => (148.0 / T_S, 760.0 / T_S),
+    };
+    let (w, h) = match piece.pips {
+        Pips::One => (STASH_ONE_PIP_WIDTH / T_S, STASH_ONE_PIP_HEIGHT / T_S),
+        Pips::Two => (STASH_TWO_PIP_WIDTH / T_S, STASH_TWO_PIP_HEIGHT / T_S),
+        Pips::Three => (STASH_THREE_PIP_WIDTH / T_S, STASH_THREE_PIP_HEIGHT / T_S),
+    };
+
+    let colour_offset = LARGEST_PIECE_TEXTURE_SIZE * f32::from(piece.colour);
+
+    (
+        x,
+        y + colour_offset,
+        w,
+        h,
+        i32::from(piece.colour),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
+}
+
 fn to_world_coords((grid_x, grid_y): (i8, i8)) -> (f32, f32) {
     (grid_x as f32 * 2.0, grid_y as f32 * 2.0)
 }
@@ -1259,6 +1361,17 @@ const SQUARE_POLY_INDEX: usize = 1;
 const CARD_RATIO: f32 = CARD_TEXTURE_PIXEL_WIDTH / CARD_TEXTURE_PIXEL_HEIGHT;
 const TOOLTIP_RATIO: f32 = TOOLTIP_TEXTURE_PIXEL_WIDTH / TOOLTIP_TEXTURE_PIXEL_HEIGHT;
 
+const STASH_ONE_PIP_WIDTH: f32 = 49.0;
+const STASH_ONE_PIP_HEIGHT: f32 = 33.0;
+const STASH_TWO_PIP_WIDTH: f32 = 73.0;
+const STASH_TWO_PIP_HEIGHT: f32 = 49.0;
+const STASH_THREE_PIP_WIDTH: f32 = 97.0;
+const STASH_THREE_PIP_HEIGHT: f32 = 65.0;
+
+const STASH_ONE_PIP_RATIO: f32 = STASH_ONE_PIP_WIDTH / STASH_ONE_PIP_HEIGHT;
+const STASH_TWO_PIP_RATIO: f32 = STASH_TWO_PIP_WIDTH / STASH_TWO_PIP_HEIGHT;
+const STASH_THREE_PIP_RATIO: f32 = STASH_THREE_PIP_WIDTH / STASH_THREE_PIP_HEIGHT;
+
 //These are the verticies of the polygons which can be drawn.
 //The index refers to the index of the inner vector within the outer vecton.
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -1278,13 +1391,34 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
             -1.0, -1.0,
             1.0, -1.0,
             1.0, 1.0,
-        ],
+            ],
         //Tooltip
         vec![
             -TOOLTIP_RATIO, 1.0,
             -TOOLTIP_RATIO, -1.0,
             TOOLTIP_RATIO, -1.0,
             TOOLTIP_RATIO, 1.0,
+        ],
+        //one pip stash
+        vec![
+            -STASH_ONE_PIP_RATIO, 1.0,
+            -STASH_ONE_PIP_RATIO, -1.0,
+            STASH_ONE_PIP_RATIO, -1.0,
+            STASH_ONE_PIP_RATIO, 1.0,
+        ],
+        //two pip stash
+        vec![
+            -STASH_TWO_PIP_RATIO, 1.0,
+            -STASH_TWO_PIP_RATIO, -1.0,
+            STASH_TWO_PIP_RATIO, -1.0,
+            STASH_TWO_PIP_RATIO, 1.0,
+        ],
+        //three pip stash
+        vec![
+            -STASH_THREE_PIP_RATIO, 1.0,
+            -STASH_THREE_PIP_RATIO, -1.0,
+            STASH_THREE_PIP_RATIO, -1.0,
+            STASH_THREE_PIP_RATIO, 1.0,
         ],
     ]
 }

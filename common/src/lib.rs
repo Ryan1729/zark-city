@@ -62,6 +62,24 @@ pub struct State {
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
+pub enum Turn {
+    DrawInitialCard,
+    SelectTurnOption,
+    DrawThree,
+    Grow,
+    Spawn,
+    Build,
+    Move,
+    MoveSelect((i8, i8), usize, Piece),
+    ConvertSlashDemolish,
+    Fly,
+    FlySelect((i8, i8), Space),
+    Hatch,
+    CpuTurn,
+    Over(PieceColour),
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub struct Stash {
     pub colour: PieceColour,
     pub one_pip: PiecesLeft,
@@ -153,25 +171,18 @@ impl PiecesLeft {
     }
 }
 
-pub type Board = HashMap<(i8, i8), Space>;
-
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub enum Turn {
-    DrawInitialCard,
-    SelectTurnOption,
-    DrawThree,
-    Grow,
-    Spawn,
-    Build,
-    Move,
-    MoveSelect((i8, i8), usize, Piece),
-    ConvertSlashDemolish,
-    Fly,
-    FlySelect((i8, i8), Space),
-    Hatch,
-    CpuTurn,
-    Over(PieceColour),
+impl From<PiecesLeft> for u8 {
+    fn from(left: PiecesLeft) -> Self {
+        match left {
+            NoneLeft => 0,
+            OneLeft => 1,
+            TwoLeft => 2,
+            ThreeLeft => 3,
+        }
+    }
 }
+
+pub type Board = HashMap<(i8, i8), Space>;
 
 pub const INITIAL_WINDOW_WIDTH: u32 = 800;
 pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
