@@ -5,6 +5,7 @@ use common::*;
 use common::Projection::*;
 use common::Turn::*;
 use common::Pips::*;
+use common::PiecesLeft::*;
 use common::Highlighted::*;
 
 use std::default::Default;
@@ -122,7 +123,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Grow,
+        turn: Spawn,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -595,7 +596,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             }
         }
-        Spawn => {}
+        Spawn => {
+            if let SelectSpace(key) = action {
+                if spawn_if_possible(&mut state.board, &key, &mut state.player_stash) {
+                    //TODO real target turn
+                    state.turn = Spawn;
+                }
+            }
+        }
         Build => {}
         Move => {
             if let SelectPiece(space_coords, piece_index) = action {
@@ -775,6 +783,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
+
+    false
+}
+
+fn spawn_if_possible(board: &mut Board, key: &(i8, i8), stash: &mut Stash) -> bool {
+    if stash[Pips::One] != NoneLeft && is_occupied_by(board, key, stash.colour) {
+        if let Some(mut space) = board.get_mut(key) {
+            if let Some(piece) = stash.remove(Pips::One) {
+                space.pieces.push(piece);
+                return true;
+            }
+        }
+    }
 
     false
 }
