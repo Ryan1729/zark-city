@@ -59,6 +59,7 @@ pub struct State {
     pub player_stash: Stash,
     pub cpu_stashes: Vec<Stash>,
     pub hud_alpha: f32,
+    pub highlighted: Highlighted,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -77,6 +78,11 @@ pub enum Turn {
     Hatch,
     CpuTurn,
     Over(PieceColour),
+}
+
+pub enum Highlighted {
+    NoHighlighting,
+    PlayerOccupation,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -260,6 +266,23 @@ impl SpacePieces {
             Some(ref mut piece) => Some(piece),
             None => None,
         }
+    }
+
+    pub fn any<F>(&self, f: F) -> bool
+    where
+        F: Fn(Piece) -> bool,
+    {
+        for i in 0..MAX_PIECES_PER_SPACE {
+            if let Some(piece) = self.0[i] {
+                if f(piece) {
+                    return true;
+                }
+            } else {
+                break;
+            }
+        }
+
+        false
     }
 }
 

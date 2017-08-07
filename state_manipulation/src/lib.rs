@@ -5,6 +5,7 @@ use common::*;
 use common::Projection::*;
 use common::Turn::*;
 use common::Pips::*;
+use common::Highlighted::*;
 
 use std::default::Default;
 
@@ -129,6 +130,7 @@ fn make_state(mut rng: StdRng) -> State {
         player_stash,
         cpu_stashes,
         hud_alpha: 1.0,
+        highlighted: PlayerOccupation,
     };
 
     add_random_board_card(&mut state);
@@ -349,7 +351,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 valid_targets.contains(&grid_coords)
             } else {
-                false
+                match state.highlighted {
+                    PlayerOccupation => {
+                        is_occupied_by(&state.board, grid_coords, state.player_stash.colour)
+                    }
+                    NoHighlighting => false,
+                }
             };
 
             match (button_outcome.draw_state, highlight) {
@@ -770,6 +777,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y));
 
     false
+}
+
+fn is_occupied_by(board: &Board, grid_coords: &(i8, i8), colour: PieceColour) -> bool {
+    if let Some(space) = board.get(grid_coords) {
+        space.pieces.any(|piece| piece.colour == colour)
+    } else {
+        false
+    }
 }
 
 fn grow_if_available(
