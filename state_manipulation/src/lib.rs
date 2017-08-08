@@ -123,7 +123,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Build,
+        turn: Hatch,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -854,7 +854,99 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = Fly;
             }
         }
-        Hatch => {}
+        Hatch => {
+            if let SelectCardFromHand(index) = action {
+                //this assumes no pyramids have been duplicated
+                let no_pieces_on_board = state.player_stash.is_full();
+
+                if no_pieces_on_board {
+
+                    let valid_target = if let Some(card) = state.player_hand.get(index) {
+                        card.is_number()
+                    } else {
+                        false
+                    };
+
+                    if valid_target {
+                        state.turn = HatchSelect(state.player_hand.remove(index), index);
+                    }
+                }
+            }
+        }
+        HatchSelect(held_card, old_index) => {
+            let build_targets = get_all_build_targets(&state.board, state.player_stash.colour);
+
+            for grid_coords in build_targets.iter() {
+                let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
+
+                draw_empty_space(p, card_matrix);
+            }
+
+            let close_enough_grid_coords =
+                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
+
+            let in_place = close_enough_grid_coords.is_some();
+
+            let card_spec =
+                if in_place && build_targets.contains(&close_enough_grid_coords.unwrap()) {
+                    get_card_spec(&close_enough_grid_coords.unwrap())
+                } else {
+                    (world_mouse_x, world_mouse_y, false)
+                };
+
+            let card_matrix = get_card_matrix(&view, card_spec);
+
+            let button_outcome = if in_place {
+                button_logic(
+                    &mut state.ui_context,
+                    ButtonState {
+                        id: 500,
+                        pointer_inside: true,
+                        mouse_pressed,
+                        mouse_released,
+                        mouse_held,
+                    },
+                )
+            } else {
+                Default::default()
+            };
+
+            draw_card(p, card_matrix, held_card.texture_spec());
+
+            let target_space_coords = if button_outcome.clicked {
+                close_enough_grid_coords
+            } else {
+                None
+            };
+
+            debug_assert!(state.player_stash.is_full());
+
+            if let Some(key) = target_space_coords {
+                if build_targets.contains(&key) {
+                    let mut pieces: SpacePieces = Default::default();
+
+                    if let Some(piece) = state.player_stash.remove(Pips::One) {
+                        pieces.push(piece);
+                    }
+
+                    state.board.insert(
+                        key,
+                        Space {
+                            card: held_card,
+                            pieces,
+
+                            ..Default::default()
+                        },
+                    );
+                    //TODO real target turn
+                    state.turn = Hatch;
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.player_hand.insert(old_index, held_card);
+                //TODO real target turn
+                state.turn = Hatch;
+            }
+        }
         CpuTurn => {}
         Over(piece_colour) => {}
     };
@@ -1266,7 +1358,10 @@ fn draw_hud(
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
-        let pointer_inside = state.turn == Build && card.is_number() && selected_index == Some(i);
+        let pointer_inside = match state.turn {
+            Build | Hatch => card.is_number() && selected_index == Some(i),
+            _ => false,
+        };
 
         let button_outcome = button_logic(
             &mut state.ui_context,

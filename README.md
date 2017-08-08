@@ -7,7 +7,7 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 # TODO
 * Turn options
   * ConvertSlashDemolish
-  * Hatch
+  * Fly ace selection
   * Draw
 * text rendering with `rusttype`
 * gameplay

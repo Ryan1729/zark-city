@@ -77,6 +77,7 @@ pub enum Turn {
     Fly,
     FlySelect((i8, i8), Space),
     Hatch,
+    HatchSelect(Card, usize),
     CpuTurn,
     Over(PieceColour),
 }
@@ -124,6 +125,18 @@ impl Stash {
             one_pip: ThreeLeft,
             two_pip: ThreeLeft,
             three_pip: ThreeLeft,
+        }
+    }
+
+    pub fn is_full(&self) -> bool {
+        match self {
+            &Stash {
+                one_pip: ThreeLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+                ..
+            } => true,
+            _ => false,
         }
     }
 }
