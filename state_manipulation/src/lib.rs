@@ -985,6 +985,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Over(piece_colour) => {}
     };
 
+    //draw the hud here so the layering is correct
+    (p.draw_layer)(1, state.hud_alpha);
+
     if cfg!(debug_assertions) {
         if t != state.turn {
             println!("{:?}", state.turn);
@@ -1519,8 +1522,6 @@ fn draw_hud(
 
         (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, piece_texture_spec, layer);
     }
-
-    (p.draw_layer)(1, state.hud_alpha);
 
     result
 }
