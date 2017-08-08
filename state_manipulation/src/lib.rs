@@ -5,6 +5,7 @@ use common::*;
 use common::Projection::*;
 use common::Turn::*;
 use common::Pips::*;
+use common::Value::*;
 use common::PiecesLeft::*;
 use common::Highlighted::*;
 
@@ -123,7 +124,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Hatch,
+        turn: Fly,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -183,8 +184,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 add_random_board_card(state);
             }
             Event::KeyDown(Keycode::R) => {
-                state.board.clear();
-                add_random_board_card(state);
+                if cfg!(debug_assertions) {
+
+                    state.board.clear();
+                    add_random_board_card(state);
+                }
+            }
+            Event::KeyDown(Keycode::C) => {
+                if cfg!(debug_assertions) {
+                    if let Some(card) = deal(state) {
+                        state.player_hand.push(card);
+                    }
+                }
             }
             Event::KeyDown(Keycode::V) => {
                 (p.set_verts)(get_vert_vecs());
@@ -770,13 +781,33 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         ConvertSlashDemolish => {}
         Fly => {
-            if let SelectSpace(key) = action {
-                if let Some(space) = state.board.remove(&key) {
-                    state.turn = FlySelect(key, space);
+            if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
+                state.turn =
+                    FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
+            } else if let SelectCardFromHand(index) = action {
+                let valid_target = if let Some(card) = state.player_hand.get(index) {
+                    card.value == Ace
+                } else {
+                    false
+                };
+
+                if valid_target {
+                    state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
                 }
             }
         }
-        FlySelect(old_coords, space) => {
+        FlySelectCarpet(ace, old_index) => {
+            if let SelectSpace(key) = action {
+                if let Some(space) = state.board.remove(&key) {
+                    state.turn = FlySelect(key, space, ace, old_index);
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.player_hand.insert(old_index, ace);
+                //TODO real target turn
+                state.turn = Fly;
+            }
+        }
+        FlySelect(old_coords, space, ace, old_index) => {
             let Space {
                 card,
                 pieces,
@@ -850,6 +881,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.board.insert(old_coords, space);
+
+                state.player_hand.insert(old_index, ace);
+
                 //TODO real target turn
                 state.turn = Fly;
             }
@@ -958,7 +992,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     match state.turn {
-        FlySelect(_, _) => {}
+        BuildSelect(_, _) |
+        MoveSelect(_, _, _) |
+        FlySelectCarpet(_, _) |
+        FlySelect(_, _, _, _) |
+        HatchSelect(_, _) => {}
         _ => {
             if escape_pressed {
                 return true;
@@ -967,6 +1005,22 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     false
+}
+
+fn get_only_ace_index(hand: &Vec<Card>) -> Option<usize> {
+    let mut result = None;
+
+    for (i, card) in hand.iter().enumerate() {
+        if card.value == Ace {
+            if result.is_none() {
+                result = Some(i);
+            } else {
+                return None;
+            }
+        }
+    }
+
+    result
 }
 
 fn spawn_if_possible(board: &mut Board, key: &(i8, i8), stash: &mut Stash) -> bool {
@@ -1005,7 +1059,7 @@ fn grow_if_available(
         if let Some(piece) = space.pieces.get_mut_if_present(piece_index) {
             if piece.colour == stash.colour {
                 match piece.pips {
-                    One | Two => {
+                    Pips::One | Pips::Two => {
                         if let Some(larger_piece) = stash.remove(piece.pips.higher()) {
 
                             let temp = piece.clone();
@@ -1015,7 +1069,7 @@ fn grow_if_available(
                             return true;
                         }
                     }
-                    Three => {
+                    Pips::Three => {
                         //TODO indicate illegal move
                     }
                 }
@@ -1360,6 +1414,7 @@ fn draw_hud(
 
         let pointer_inside = match state.turn {
             Build | Hatch => card.is_number() && selected_index == Some(i),
+            Fly => card.value == Ace && selected_index == Some(i),
             _ => false,
         };
 
