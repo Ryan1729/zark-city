@@ -70,6 +70,7 @@ pub enum Turn {
     Grow,
     Spawn,
     Build,
+    BuildSelect(Card, usize),
     Move,
     MoveSelect((i8, i8), usize, Piece),
     ConvertSlashDemolish,
@@ -350,7 +351,7 @@ impl Iterator for SpacePiecesIterator {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, Default)]
 pub struct Space {
     pub card: Card,
     pub pieces: SpacePieces,
@@ -462,13 +463,28 @@ impl AllValues for Pips {
 }
 
 all_values_rand_impl!(Pips);
-
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Card {
     pub suit: Suit,
     pub value: Value,
+}
+
+impl Default for Card {
+    fn default() -> Card {
+        Card {
+            suit: Spades,
+            value: Ace,
+        }
+    }
+}
+
+impl Card {
+    pub fn is_number(&self) -> bool {
+        self.value.is_number()
+    }
 }
 
 impl AllValues for Card {
@@ -599,6 +615,15 @@ pub enum Value {
     King,
 }
 use Value::*;
+
+impl Value {
+    pub fn is_number(&self) -> bool {
+        match *self {
+            Jack | Queen | King | Ace => false,
+            _ => true,
+        }
+    }
+}
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

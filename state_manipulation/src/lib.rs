@@ -144,6 +144,7 @@ enum Action {
     SelectSpace((i8, i8)),
     PageBack((i8, i8)),
     PageForward((i8, i8)),
+    SelectCardFromHand(usize),
     NoAction,
 }
 use Action::*;
@@ -348,7 +349,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             action = SelectSpace(grid_coords.clone());
         } else {
             let highlight = if let MoveSelect(piece_pickup_coords, _, _) = state.turn {
-                let valid_targets = get_valid_targets(&state.board, piece_pickup_coords);
+                let valid_targets = get_valid_move_targets(&state.board, piece_pickup_coords);
 
                 valid_targets.contains(&grid_coords)
             } else {
@@ -560,7 +561,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    match draw_hud(p, state, aspect_ratio, (mouse_x, mouse_y)) {
+    match draw_hud(
+        p,
+        state,
+        aspect_ratio,
+        (mouse_x, mouse_y),
+        mouse_pressed,
+        mouse_released,
+        mouse_held,
+    ) {
         NoAction => {}
         otherwise => {
             action = otherwise;
@@ -611,7 +620,83 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             }
         }
-        Build => {}
+        Build => {
+            if let SelectCardFromHand(index) = action {
+                let valid_target = if let Some(card) = state.player_hand.get(index) {
+                    card.is_number()
+                } else {
+                    false
+                };
+
+                if valid_target {
+                    state.turn = BuildSelect(state.player_hand.remove(index), index);
+                }
+            }
+        }
+        BuildSelect(held_card, old_index) => {
+            let build_targets = get_all_build_targets(&state.board, state.player_stash.colour);
+
+            for grid_coords in build_targets.iter() {
+                let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
+
+                draw_empty_space(p, card_matrix);
+            }
+
+            let close_enough_grid_coords =
+                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
+
+            let in_place = close_enough_grid_coords.is_some();
+
+            let card_spec =
+                if in_place && build_targets.contains(&close_enough_grid_coords.unwrap()) {
+                    get_card_spec(&close_enough_grid_coords.unwrap())
+                } else {
+                    (world_mouse_x, world_mouse_y, false)
+                };
+
+            let card_matrix = get_card_matrix(&view, card_spec);
+
+            let button_outcome = if in_place {
+                button_logic(
+                    &mut state.ui_context,
+                    ButtonState {
+                        id: 500,
+                        pointer_inside: true,
+                        mouse_pressed,
+                        mouse_released,
+                        mouse_held,
+                    },
+                )
+            } else {
+                Default::default()
+            };
+
+            draw_card(p, card_matrix, held_card.texture_spec());
+
+            let target_space_coords = if button_outcome.clicked {
+                close_enough_grid_coords
+            } else {
+                None
+            };
+
+            if let Some(key) = target_space_coords {
+                if build_targets.contains(&key) {
+                    state.board.insert(
+                        key,
+                        Space {
+                            card: held_card,
+                            ..Default::default()
+                        },
+                    );
+                    //TODO real target turn
+                    state.turn = Build;
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.player_hand.insert(old_index, held_card);
+                //TODO real target turn
+                state.turn = Build;
+            }
+        }
         Move => {
             if let SelectPiece(space_coords, piece_index) = action {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -659,7 +744,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
 
             if let Some(key) = target_space_coords {
-                let valid_targets = get_valid_targets(&state.board, space_coords);
+                let valid_targets = get_valid_move_targets(&state.board, space_coords);
 
                 if valid_targets.contains(&key) {
 
@@ -699,7 +784,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             } = space;
 
             let adjacent_empty_spaces = {
-                let mut spaces = get_all_adjacent_empty_spaces(&state.board);
+                let mut spaces = get_all_diagonally_connected_empty_spaces(&state.board);
                 spaces.remove(&old_coords);
                 spaces
             };
@@ -807,10 +892,14 @@ fn spawn_if_possible(board: &mut Board, key: &(i8, i8), stash: &mut Stash) -> bo
 
 fn is_occupied_by(board: &Board, grid_coords: &(i8, i8), colour: PieceColour) -> bool {
     if let Some(space) = board.get(grid_coords) {
-        space.pieces.any(|piece| piece.colour == colour)
+        space_occupied_by(space, colour)
     } else {
         false
     }
+}
+
+fn space_occupied_by(space: &Space, colour: PieceColour) -> bool {
+    space.pieces.any(|piece| piece.colour == colour)
 }
 
 fn grow_if_available(
@@ -929,7 +1018,7 @@ fn get_card_spec(grid_coords: &(i8, i8)) -> CardSpec {
 
 use std::collections::HashSet;
 
-fn get_valid_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
+fn get_valid_move_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
     let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
@@ -944,7 +1033,7 @@ fn get_valid_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
     result
 }
 
-fn get_all_adjacent_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
+fn get_all_diagonally_connected_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
     let filled_coords = board.keys();
 
     let offsets = [
@@ -958,18 +1047,48 @@ fn get_all_adjacent_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
         (1, -1),
     ];
 
-    let mut adjacent_empty_spaces = HashSet::new();
+    let mut result = HashSet::new();
 
     for &(x, y) in filled_coords {
         for &(dx, dy) in offsets.iter() {
             let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
             if !board.contains_key(&new_coords) {
-                adjacent_empty_spaces.insert(new_coords);
+                result.insert(new_coords);
             }
         }
     }
 
-    adjacent_empty_spaces
+    result
+}
+
+fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+    let mut result = HashSet::new();
+
+    let occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+    for &(x, y) in occupied_spaces.iter() {
+        for &(dx, dy) in offsets.iter() {
+            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+            if !board.contains_key(&new_coords) {
+                result.insert(new_coords);
+            }
+        }
+    }
+
+    result
+}
+
+fn get_all_spaces_occupied_by(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+    board
+        .iter()
+        .filter_map(|(key, space)| if space_occupied_by(space, colour) {
+            Some(*key)
+        } else {
+            None
+        })
+        .collect()
 }
 
 fn card_is_rotated(grid_coords: &(i8, i8)) -> bool {
@@ -1061,6 +1180,9 @@ fn draw_hud(
     state: &mut State,
     aspect_ratio: f32,
     (mouse_x, mouse_y): (f32, f32),
+    mouse_pressed: bool,
+    mouse_released: bool,
+    mouse_held: bool,
 ) -> Action {
     let mut result = NoAction;
 
@@ -1101,21 +1223,21 @@ fn draw_hud(
 
     let mut card_coords = vec![(0.0, 0.0); hand_length];
 
-    let mut highlighted_index = None;
+    let mut selected_index = None;
 
     for i in (0..hand_length).rev() {
         let (card_x, card_y) = (-half_width * (13.0 - i as f32) / 16.0, -half_height * 0.75);
 
         card_coords[i] = (card_x, card_y);
 
-        if highlighted_index.is_none() {
+        if selected_index.is_none() {
             let (card_mouse_x, card_mouse_y) = (hud_mouse_x - card_x, hud_mouse_y - card_y);
 
             let on_card = (card_mouse_x).abs() <= CARD_RATIO * card_scale &&
                 (card_mouse_y).abs() <= card_scale;
 
             if on_card {
-                highlighted_index = Some(i);
+                selected_index = Some(i);
             }
         }
     }
@@ -1144,12 +1266,37 @@ fn draw_hud(
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
+        let pointer_inside = state.turn == Build && card.is_number() && selected_index == Some(i);
+
+        let button_outcome = button_logic(
+            &mut state.ui_context,
+            ButtonState {
+                id: (250 + i) as _,
+                pointer_inside,
+                mouse_pressed,
+                mouse_released,
+                mouse_held,
+            },
+        );
+
         let mut texture_spec = card.texture_spec();
 
-        if highlighted_index == Some(i) {
-            texture_spec.5 = -0.5;
-            texture_spec.7 = -0.5;
+        if button_outcome.clicked {
+            result = SelectCardFromHand(i);
+        } else {
+            match button_outcome.draw_state {
+                Pressed => {
+                    texture_spec.5 = -0.5;
+                    texture_spec.6 = -0.5;
+                }
+                Hover => {
+                    texture_spec.5 = -0.5;
+                    texture_spec.7 = -0.5;
+                }
+                Inactive => {}
+            }
         }
+
 
         (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, layer);
     }
