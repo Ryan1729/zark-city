@@ -124,7 +124,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: Fly,
+        turn: SelectTurnOption,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -257,7 +257,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    let mouse_held = state.mouse_held;
+    let mouse_button_state = ButtonState {
+        pressed: mouse_pressed,
+        released: mouse_released,
+        held: state.mouse_held,
+    };
 
     state.ui_context.frame_init();
 
@@ -308,7 +312,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let camera = scale_translation(1.0, state.cam_x, state.cam_y);
 
-        let inverse_camera = scale_translation(1.0, -state.cam_x, -state.cam_y);
+        let inverse_camera = inverse_scale_translation(1.0, state.cam_x, state.cam_y);
 
         let view = mat4x4_mul(&camera, &projection);
         let inverse_view = mat4x4_mul(&inverse_projection, &inverse_camera);
@@ -347,12 +351,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let button_outcome = button_logic(
             &mut state.ui_context,
-            ButtonState {
+            Button {
                 id: card_id,
                 pointer_inside: on_card,
-                mouse_pressed,
-                mouse_released,
-                mouse_held,
+                state: mouse_button_state,
             },
         );
 
@@ -413,12 +415,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 Move | Grow => {
                     button_logic(
                         &mut state.ui_context,
-                        ButtonState {
+                        Button {
                             id: piece_id,
                             pointer_inside: on_piece,
-                            mouse_pressed,
-                            mouse_released,
-                            mouse_held,
+                            state: mouse_button_state,
                         },
                     )
                 }
@@ -484,12 +484,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let forward_button_outcome = button_logic(
                 &mut state.ui_context,
-                ButtonState {
+                Button {
                     id: arrow_id(card_id, true),
                     pointer_inside: on_forward,
-                    mouse_pressed,
-                    mouse_released,
-                    mouse_held,
+                    state: mouse_button_state,
                 },
             );
 
@@ -536,12 +534,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 let backward_button_outcome = button_logic(
                     &mut state.ui_context,
-                    ButtonState {
+                    Button {
                         id: arrow_id(card_id, false),
                         pointer_inside: on_backward,
-                        mouse_pressed,
-                        mouse_released,
-                        mouse_held,
+                        state: mouse_button_state,
                     },
                 );
 
@@ -572,26 +568,59 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    {
-        let texture_spec = (
-            3.0 * CARD_TEXTURE_WIDTH,
-            4.0 * CARD_TEXTURE_HEIGHT + (4.0 * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
-            TOOLTIP_TEXTURE_WIDTH,
-            TOOLTIP_TEXTURE_HEIGHT,
-            0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        );
+    if state.turn == SelectTurnOption {
+        let top_row = [
+            (DrawThree, "Draw"),
+            (Grow, "Grow"),
+            (Spawn, "Spawn"),
+            (Build, "Build"),
+        ];
 
-        let (x, y) = (-0.25, 0.875);
+        let top_row_len = top_row.len();
 
-        (p.draw_textured_poly_with_matrix)(scale_translation(0.0625, x, y), 2, texture_spec, 0);
+        for i in 0..top_row_len {
+            let (target_turn, label) = top_row[i];
 
-        (p.draw_text)("Hatcgh", (x, y), 1.0, 24.0, [1.0; 4], 0);
+            if turn_options_button(
+                p,
+                &mut state.ui_context,
+                label,
+                (-0.75 + i as f32 * 0.5, 0.875),
+                (600 + i) as _,
+                (mouse_x, mouse_y),
+                mouse_button_state,
+            )
+            {
+                state.turn = target_turn;
+            };
+        }
 
+        let bottom_row = [
+            (Move, "Move"),
+            (ConvertSlashDemolish, "Convert/Demolish"),
+            (Fly, "Fly"),
+            (Hatch, "Hatch"),
+        ];
+
+        for i in 0..bottom_row.len() {
+            let (target_turn, label) = bottom_row[i];
+
+            if turn_options_button(
+                p,
+                &mut state.ui_context,
+                label,
+                (-0.75 + i as f32 * 0.5, 11.0 / 16.0),
+                (600 + top_row_len + i) as _,
+                (mouse_x, mouse_y),
+                mouse_button_state,
+            )
+            {
+                state.turn = target_turn;
+            };
+        }
     }
+
+
 
 
     match draw_hud(
@@ -599,9 +628,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         state,
         aspect_ratio,
         (mouse_x, mouse_y),
-        mouse_pressed,
-        mouse_released,
-        mouse_held,
+        mouse_button_state,
     ) {
         NoAction => {}
         otherwise => {
@@ -640,16 +667,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     &mut state.player_stash,
                 )
                 {
-                    //TODO real target turn
-                    state.turn = Grow;
+
+                    state.turn = SelectTurnOption;
                 }
             }
         }
         Spawn => {
             if let SelectSpace(key) = action {
                 if spawn_if_possible(&mut state.board, &key, &mut state.player_stash) {
-                    //TODO real target turn
-                    state.turn = Spawn;
+
+                    state.turn = SelectTurnOption;
                 }
             }
         }
@@ -692,12 +719,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let button_outcome = if in_place {
                 button_logic(
                     &mut state.ui_context,
-                    ButtonState {
+                    Button {
                         id: 500,
                         pointer_inside: true,
-                        mouse_pressed,
-                        mouse_released,
-                        mouse_held,
+                        state: mouse_button_state,
                     },
                 )
             } else {
@@ -721,13 +746,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             ..Default::default()
                         },
                     );
-                    //TODO real target turn
-                    state.turn = Build;
+
+                    state.turn = SelectTurnOption;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
-                //TODO real target turn
-                state.turn = Build;
+
+                state.turn = SelectTurnOption;
             }
         }
         Move => {
@@ -758,12 +783,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let button_outcome = if close_enough_grid_coords.is_some() {
                 button_logic(
                     &mut state.ui_context,
-                    ButtonState {
+                    Button {
                         id: 500,
                         pointer_inside: true,
-                        mouse_pressed,
-                        mouse_released,
-                        mouse_held,
+                        state: mouse_button_state,
                     },
                 )
             } else {
@@ -788,8 +811,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         space.pieces.push(piece);
                     }
 
-                    //TODO real target turn
-                    state.turn = Move;
+
+                    state.turn = SelectTurnOption;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -797,8 +820,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                     space.pieces.insert(piece_index, piece);
                 }
-                //TODO real target turn
-                state.turn = Move;
+
+                state.turn = SelectTurnOption;
             }
         }
         ConvertSlashDemolish => {}
@@ -825,8 +848,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, ace);
-                //TODO real target turn
-                state.turn = Fly;
+
+                state.turn = SelectTurnOption;
             }
         }
         FlySelect(old_coords, space, ace, old_index) => {
@@ -865,12 +888,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let button_outcome = if in_place {
                 button_logic(
                     &mut state.ui_context,
-                    ButtonState {
+                    Button {
                         id: 500,
                         pointer_inside: true,
-                        mouse_pressed,
-                        mouse_released,
-                        mouse_held,
+                        state: mouse_button_state,
                     },
                 )
             } else {
@@ -898,16 +919,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let Some(key) = target_space_coords {
                 if adjacent_empty_spaces.contains(&key) {
                     state.board.insert(key, space);
-                    //TODO real target turn
-                    state.turn = Fly;
+
+                    state.turn = SelectTurnOption;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.board.insert(old_coords, space);
 
                 state.player_hand.insert(old_index, ace);
 
-                //TODO real target turn
-                state.turn = Fly;
+
+                state.turn = SelectTurnOption;
             }
         }
         Hatch => {
@@ -955,12 +976,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let button_outcome = if in_place {
                 button_logic(
                     &mut state.ui_context,
-                    ButtonState {
+                    Button {
                         id: 500,
                         pointer_inside: true,
-                        mouse_pressed,
-                        mouse_released,
-                        mouse_held,
+                        state: mouse_button_state,
                     },
                 )
             } else {
@@ -994,13 +1013,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             ..Default::default()
                         },
                     );
-                    //TODO real target turn
-                    state.turn = Hatch;
+
+                    state.turn = SelectTurnOption;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
-                //TODO real target turn
-                state.turn = Hatch;
+
+                state.turn = SelectTurnOption;
             }
         }
         CpuTurn => {}
@@ -1030,6 +1049,67 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     false
+}
+
+fn turn_options_button(
+    p: &Platform,
+    context: &mut UIContext,
+    label: &str,
+    (x, y): (f32, f32),
+    id: UiId,
+    (mouse_x, mouse_y): (f32, f32),
+    state: ButtonState,
+) -> bool {
+    let mut texture_spec = (
+        3.0 * CARD_TEXTURE_WIDTH,
+        4.0 * CARD_TEXTURE_HEIGHT + (4.0 * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+        TOOLTIP_TEXTURE_WIDTH,
+        TOOLTIP_TEXTURE_HEIGHT,
+        0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    );
+
+
+    let camera = scale_translation(0.0625, x, y);
+
+    let inverse_camera = inverse_scale_translation(0.0625, x, y);
+
+    let (box_mouse_x, box_mouse_y, _, _) =
+        mat4x4_vector_mul(&inverse_camera, mouse_x, mouse_y, 0.0, 1.0);
+
+    let pointer_inside = box_mouse_x.abs() <= TOOLTIP_RATIO && box_mouse_y.abs() <= 1.0;
+
+    let button_outcome = button_logic(
+        context,
+        Button {
+            id,
+            pointer_inside,
+            state,
+        },
+    );
+
+    match button_outcome.draw_state {
+        Pressed => {
+            texture_spec.5 = -0.5;
+            texture_spec.6 = -0.5;
+        }
+        Hover => {
+            texture_spec.5 = -0.5;
+            texture_spec.7 = -0.5;
+        }
+        Inactive => {}
+    }
+
+    (p.draw_textured_poly_with_matrix)(camera, 2, texture_spec, 0);
+
+    let font_scale = if label.len() > 8 { 18.0 } else { 24.0 };
+
+    (p.draw_text)(label, (x, y), 1.0, font_scale, [1.0; 4], 0);
+
+    button_outcome.clicked
 }
 
 fn get_only_ace_index(hand: &Vec<Card>) -> Option<usize> {
@@ -1147,6 +1227,10 @@ fn scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
         0.0,
         1.0,
     ]
+}
+
+fn inverse_scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
+    scale_translation(1.0 / scale, -x_offest / scale, -y_offset / scale)
 }
 
 fn get_close_enough_grid_coords(world_mouse_x: f32, world_mouse_y: f32) -> Option<(i8, i8)> {
@@ -1351,9 +1435,7 @@ fn draw_hud(
     state: &mut State,
     aspect_ratio: f32,
     (mouse_x, mouse_y): (f32, f32),
-    mouse_pressed: bool,
-    mouse_released: bool,
-    mouse_held: bool,
+    mouse_button_state: ButtonState,
 ) -> Action {
     let mut result = NoAction;
 
@@ -1445,12 +1527,10 @@ fn draw_hud(
 
         let button_outcome = button_logic(
             &mut state.ui_context,
-            ButtonState {
+            Button {
                 id: (250 + i) as _,
                 pointer_inside,
-                mouse_pressed,
-                mouse_released,
-                mouse_held,
+                state: mouse_button_state,
             },
         );
 
@@ -1600,12 +1680,17 @@ fn draw_stash(p: &Platform, matrix: [f32; 16], stash: &Stash, layer: usize) {
 }
 
 #[derive(Copy, Clone, Debug)]
-struct ButtonState {
+struct Button {
     id: UiId,
     pointer_inside: bool,
-    mouse_pressed: bool,
-    mouse_released: bool,
-    mouse_held: bool,
+    state: ButtonState,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ButtonState {
+    pressed: bool,
+    released: bool,
+    held: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1633,22 +1718,22 @@ use DrawState::*;
 
 ///This function handles the logic for a given button and returns wheter it was clicked
 ///and the state of the button so it can be drawn properly elsewhere
-fn button_logic(context: &mut UIContext, button_state: ButtonState) -> ButtonOutcome {
+fn button_logic(context: &mut UIContext, button: Button) -> ButtonOutcome {
     /// In order for this to work properly `context.frame_init();`
     /// must be called at the start of each frame, before this function is called
     let mut clicked = false;
 
-    let inside = button_state.pointer_inside;
-    let id = button_state.id;
+    let inside = button.pointer_inside;
+    let id = button.id;
 
     if context.active == id {
-        if button_state.mouse_released {
+        if button.state.released {
             clicked = context.hot == id && inside;
 
             context.set_not_active();
         }
     } else if context.hot == id {
-        if button_state.mouse_pressed {
+        if button.state.pressed {
             context.set_active(id);
         }
     }
@@ -1657,14 +1742,13 @@ fn button_logic(context: &mut UIContext, button_state: ButtonState) -> ButtonOut
         context.set_next_hot(id);
     }
 
-    let draw_state =
-        if context.active == id && (button_state.mouse_held || button_state.mouse_pressed) {
-            Pressed
-        } else if context.hot == id {
-            Hover
-        } else {
-            Inactive
-        };
+    let draw_state = if context.active == id && (button.state.held || button.state.pressed) {
+        Pressed
+    } else if context.hot == id {
+        Hover
+    } else {
+        Inactive
+    };
 
     ButtonOutcome {
         clicked,
