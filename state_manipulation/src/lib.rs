@@ -1523,6 +1523,18 @@ fn draw_hud(
         (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, piece_texture_spec, layer);
     }
 
+    (p.draw_text)(
+        "cursor text",
+        // ((mouse_x + 1.0) / 2.0, 1.0 - (mouse_y + 1.0) / 2.0),
+        (mouse_x, mouse_y),
+        1.0,
+        48.0,
+        [1.0, 1.0, 1.0, 1.0],
+        0,
+    );
+
+    println!("{:?}", (mouse_x, mouse_y));
+
     result
 }
 

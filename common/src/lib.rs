@@ -37,6 +37,7 @@ pub struct Platform {
     pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
     pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
     pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
+    pub draw_text: fn(&str, (f32, f32), f32, f32, [f32; 4], usize),
     pub draw_layer: fn(usize, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
