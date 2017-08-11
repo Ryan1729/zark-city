@@ -1415,16 +1415,40 @@ fn render_text(
 
         let ctx = &resources.ctx;
 
-        let paragraph_width = (width_percentage * screen_width as f32) as u32;
+        let paragraph_max_width = (width_percentage * screen_width as f32) as u32;
 
-        let glyphs = layout_paragraph(font, Scale::uniform(scale), paragraph_width, text, (
-            x01 *
-                screen_width as
-                    f32,
-            y01 *
-                screen_height as
-                    f32,
-        ));
+        let font_scale = Scale::uniform(scale);
+
+        let paragraph_coords = {
+            let v_metrics = font.v_metrics(font_scale);
+
+            let no_offset_glyphs =
+                layout_paragraph(font, Scale::uniform(scale), paragraph_max_width, text, (
+                    0.0,
+                    v_metrics.line_gap,
+                ));
+
+            let paragraph_width = no_offset_glyphs.iter().fold(0, |acc, g| {
+                std::cmp::max(g.pixel_bounding_box().map(|r| r.max.x).unwrap_or(acc), acc)
+            });
+            let paragraph_height = no_offset_glyphs.iter().fold(0, |acc, g| {
+                std::cmp::max(g.pixel_bounding_box().map(|r| r.max.y).unwrap_or(acc), acc)
+            });
+
+            (
+                x01 * screen_width as f32 - (paragraph_width as f32 / 2.0),
+                y01 * screen_height as f32 - (paragraph_height as f32 / 2.0),
+            )
+
+        };
+
+        let glyphs = layout_paragraph(
+            font,
+            font_scale,
+            paragraph_max_width,
+            text,
+            paragraph_coords,
+        );
         for glyph in &glyphs {
             text_cache.queue_glyph(0, glyph.clone());
         }

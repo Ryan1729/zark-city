@@ -572,6 +572,28 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
+    {
+        let texture_spec = (
+            3.0 * CARD_TEXTURE_WIDTH,
+            4.0 * CARD_TEXTURE_HEIGHT + (4.0 * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+            TOOLTIP_TEXTURE_WIDTH,
+            TOOLTIP_TEXTURE_HEIGHT,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        );
+
+        let (x, y) = (-0.25, 0.875);
+
+        (p.draw_textured_poly_with_matrix)(scale_translation(0.0625, x, y), 2, texture_spec, 0);
+
+        (p.draw_text)("Hatcgh", (x, y), 1.0, 24.0, [1.0; 4], 0);
+
+    }
+
+
     match draw_hud(
         p,
         state,
@@ -1507,7 +1529,7 @@ fn draw_hud(
         let colour_offset = f32::from(piece_colour);
         let texture_index = i32::from(piece_colour);
 
-        let piece_texture_spec = (
+        let texture_spec = (
             3.0 * CARD_TEXTURE_WIDTH,
             4.0 * CARD_TEXTURE_HEIGHT +
                 (colour_offset * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
@@ -1520,20 +1542,8 @@ fn draw_hud(
             0.0,
         );
 
-        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, piece_texture_spec, layer);
+        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, texture_spec, layer);
     }
-
-    (p.draw_text)(
-        "cursor text",
-        // ((mouse_x + 1.0) / 2.0, 1.0 - (mouse_y + 1.0) / 2.0),
-        (mouse_x, mouse_y),
-        1.0,
-        48.0,
-        [1.0, 1.0, 1.0, 1.0],
-        0,
-    );
-
-    println!("{:?}", (mouse_x, mouse_y));
 
     result
 }
