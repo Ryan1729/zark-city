@@ -129,8 +129,10 @@ fn make_state(mut rng: StdRng) -> State {
         pile: Vec::new(),
         player_hand,
         cpu_hands,
-        player_stash,
-        cpu_stashes,
+        stashes: Stashes {
+            player_stash,
+            cpu_stashes,
+        },
         hud_alpha: 1.0,
         highlighted: PlayerOccupation,
     };
@@ -146,6 +148,7 @@ enum Action {
     PageBack((i8, i8)),
     PageForward((i8, i8)),
     SelectCardFromHand(usize),
+    SelectPieceFromStash(Pips, PieceColour),
     NoAction,
 }
 use Action::*;
@@ -368,7 +371,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             } else {
                 match state.highlighted {
                     PlayerOccupation => {
-                        is_occupied_by(&state.board, grid_coords, state.player_stash.colour)
+                        is_occupied_by(&state.board, grid_coords, state.stashes.player_stash.colour)
                     }
                     NoHighlighting => false,
                 }
@@ -664,20 +667,23 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     space_coords,
                     piece_index,
                     &mut state.board,
-                    &mut state.player_stash,
+                    &mut state.stashes.player_stash,
                 )
                 {
 
                     state.turn = SelectTurnOption;
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         Spawn => {
             if let SelectSpace(key) = action {
-                if spawn_if_possible(&mut state.board, &key, &mut state.player_stash) {
-
+                if spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
                     state.turn = SelectTurnOption;
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         Build => {
@@ -691,10 +697,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if valid_target {
                     state.turn = BuildSelect(state.player_hand.remove(index), index);
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         BuildSelect(held_card, old_index) => {
-            let build_targets = get_all_build_targets(&state.board, state.player_stash.colour);
+            let build_targets =
+                get_all_build_targets(&state.board, state.stashes.player_stash.colour);
 
             for grid_coords in build_targets.iter() {
                 let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
@@ -759,10 +768,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let SelectPiece(space_coords, piece_index) = action {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
                     let mut space = entry.get_mut();
-                    if let Some(piece) = space.pieces.take_if_present(piece_index) {
+                    if let Some(piece) = space.pieces.remove(piece_index) {
                         state.turn = MoveSelect(space_coords, piece_index, piece);
                     }
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         MoveSelect(space_coords, piece_index, piece) => {
@@ -824,7 +835,199 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = SelectTurnOption;
             }
         }
-        ConvertSlashDemolish => {}
+        ConvertSlashDemolish => {
+            if let SelectPiece(space_coords, piece_index) = action {
+                state.turn =
+                    ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
+            }
+        }
+        ConvertSlashDemolishDiscard(space_coords,
+                                    piece_index,
+                                    card_index_1,
+                                    card_index_2,
+                                    card_index_3) => {
+            if let Some(space) = state.board.get(&space_coords) {
+                if let Some(piece) = space.pieces.get(piece_index) {
+
+                    let pips_needed = u8::from(piece.pips);
+
+                    let hand = &state.player_hand;
+
+                    let (pips_selected, smallest_card_value) =
+                        match (
+                            card_index_1.and_then(|i| hand.get(i)),
+                            card_index_2.and_then(|i| hand.get(i)),
+                            card_index_3.and_then(|i| hand.get(i)),
+                        ) {
+                            (None, None, None) => (0, 0),
+                            (Some(&card), None, None) |
+                            (None, Some(&card), None) |
+                            (None, None, Some(&card)) => {
+                                let v = pip_value(card);
+
+                                (v, v)
+                            }
+                            (Some(&card1), Some(&card2), None) |
+                            (None, Some(&card1), Some(&card2)) |
+                            (Some(&card1), None, Some(&card2)) => {
+                                let v1 = pip_value(card1);
+                                let v2 = pip_value(card2);
+
+                                (v1 + v2, std::cmp::min(v1, v2))
+                            }
+                            (Some(&card1), Some(&card2), Some(&card3)) => {
+                                let v1 = pip_value(card1);
+                                let v2 = pip_value(card2);
+                                let v3 = pip_value(card3);
+
+                                (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
+                            }
+                        };
+
+                    state.turn = if pips_selected >= pips_needed &&
+                        smallest_card_value > pips_selected - pips_needed
+                    {
+                        ConvertSlashDemolishWhich(
+                            space_coords,
+                            piece_index,
+                            card_index_1,
+                            card_index_2,
+                            card_index_3,
+                        )
+                    } else {
+                        if let SelectCardFromHand(index) = action {
+                            //TODO better way to signal when there are too many cards?
+                            match (
+                                card_index_1.and_then(|i| hand.get(i)),
+                                card_index_2.and_then(|i| hand.get(i)),
+                                card_index_3.and_then(|i| hand.get(i)),
+                            ) {
+                                (Some(_), Some(_), Some(_)) => state.turn,
+                                (Some(_), Some(_), _) => {
+                                    ConvertSlashDemolishDiscard(
+                                        space_coords,
+                                        piece_index,
+                                        card_index_1,
+                                        card_index_2,
+                                        Some(index),
+                                    )
+                                }
+                                (Some(_), _, _) => {
+                                    ConvertSlashDemolishDiscard(
+                                        space_coords,
+                                        piece_index,
+                                        card_index_1,
+
+                                        Some(index),
+                                        None,
+                                    )
+                                }
+                                _ => {
+                                    ConvertSlashDemolishDiscard(
+                                        space_coords,
+                                        piece_index,
+                                        Some(index),
+                                        None,
+                                        None,
+                                    )
+                                }
+                            }
+
+                        } else {
+                            state.turn
+                        }
+                    };
+
+                }
+
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn =
+                    ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+            }
+        }
+        ConvertSlashDemolishWhich(space_coords,
+                                  piece_index,
+                                  card_index_1,
+                                  card_index_2,
+                                  card_index_3) => {
+            let hand = &mut state.player_hand;
+            let stash = &mut state.stashes.player_stash;
+            if let Some(space) = state.board.get_mut(&space_coords) {
+
+                let can_convert = if let Some(piece) = space.pieces.get(piece_index) {
+                    match piece.pips {
+                        Pips::One => stash[Pips::One] != NoneLeft,
+                        Pips::Two => stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft,
+                        Pips::Three => {
+                            stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft ||
+                                stash[Pips::Three] != NoneLeft
+                        }
+                    }
+                } else {
+                    false
+                };
+
+                if can_convert &&
+                    turn_options_button(
+                        p,
+                        &mut state.ui_context,
+                        "Convert",
+                        (-0.25, 0.875),
+                        700,
+                        (mouse_x, mouse_y),
+                        mouse_button_state,
+                    )
+                {
+                    state.turn = ConvertSelect(
+                        space_coords,
+                        piece_index,
+                        card_index_1,
+                        card_index_2,
+                        card_index_3,
+                    );
+                } else if turn_options_button(
+                    p,
+                    &mut state.ui_context,
+                    "Demolish",
+                    (0.25, 0.875),
+                    701,
+                    (mouse_x, mouse_y),
+                    mouse_button_state,
+                )
+                {
+                    space.pieces.remove(piece_index);
+                    card_index_1.map(|i| hand.remove(i));
+                    card_index_2.map(|i| hand.remove(i));
+                    card_index_3.map(|i| hand.remove(i));
+                };
+
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
+            }
+
+        }
+        ConvertSelect(space_coords, piece_index, card_index_1, card_index_2, card_index_3) => {
+            //TODO indicate what to do?
+            //TODO "choose" automatically if there is one choice?
+            if let SelectPieceFromStash(pips, stash_colour) = action {
+                if let Some(space) = state.board.get_mut(&space_coords) {
+
+                    if let Some(piece) = space.pieces.get_mut(piece_index) {
+
+                        if pips <= piece.pips {
+                            if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
+                                state.stashes[piece.colour].add(*piece);
+                                *piece = stash_piece;
+                                state.turn = SelectTurnOption;
+                            }
+
+                        }
+                    }
+                }
+            }
+        }
         Fly => {
             if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
                 state.turn =
@@ -839,6 +1042,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if valid_target {
                     state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         FlySelectCarpet(ace, old_index) => {
@@ -934,7 +1139,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Hatch => {
             if let SelectCardFromHand(index) = action {
                 //this assumes no pyramids have been duplicated
-                let no_pieces_on_board = state.player_stash.is_full();
+                let no_pieces_on_board = state.stashes.player_stash.is_full();
 
                 if no_pieces_on_board {
 
@@ -948,10 +1153,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         state.turn = HatchSelect(state.player_hand.remove(index), index);
                     }
                 }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
         }
         HatchSelect(held_card, old_index) => {
-            let build_targets = get_all_build_targets(&state.board, state.player_stash.colour);
+            let build_targets =
+                get_all_build_targets(&state.board, state.stashes.player_stash.colour);
 
             for grid_coords in build_targets.iter() {
                 let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
@@ -994,13 +1202,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 None
             };
 
-            debug_assert!(state.player_stash.is_full());
+            debug_assert!(state.stashes.player_stash.is_full());
 
             if let Some(key) = target_space_coords {
                 if build_targets.contains(&key) {
                     let mut pieces: SpacePieces = Default::default();
 
-                    if let Some(piece) = state.player_stash.remove(Pips::One) {
+                    if let Some(piece) = state.stashes.player_stash.remove(Pips::One) {
                         pieces.push(piece);
                     }
 
@@ -1049,6 +1257,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     false
+}
+
+fn pip_value(card: Card) -> u8 {
+    match card.value {
+        Ace | Jack /* | Joker*/ => 1,
+        Queen =>2,
+        King =>3,
+        //this value ensures the set of cards will be rejected
+        _ => 0,
+    }
 }
 
 fn turn_options_button(
@@ -1161,7 +1379,7 @@ fn grow_if_available(
 ) -> bool {
     if let Occupied(mut entry) = board.entry(space_coords) {
         let mut space = entry.get_mut();
-        if let Some(piece) = space.pieces.get_mut_if_present(piece_index) {
+        if let Some(piece) = space.pieces.get_mut(piece_index) {
             if piece.colour == stash.colour {
                 match piece.pips {
                     Pips::One | Pips::Two => {
@@ -1579,7 +1797,7 @@ fn draw_hud(
 
     let stash_matrix = mat4x4_mul(&stash_camera_matrix, &hud_view);
 
-    draw_stash(p, stash_matrix, &state.player_stash, layer);
+    draw_stash(p, stash_matrix, &state.stashes.player_stash, layer);
 
     if false {
         let mouse_camera_matrix = [

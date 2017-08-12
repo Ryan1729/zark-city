@@ -57,8 +57,7 @@ pub struct State {
     pub pile: Vec<Card>,
     pub player_hand: Vec<Card>,
     pub cpu_hands: Vec<Vec<Card>>,
-    pub player_stash: Stash,
-    pub cpu_stashes: Vec<Stash>,
+    pub stashes: Stashes,
     pub hud_alpha: f32,
     pub highlighted: Highlighted,
 }
@@ -75,6 +74,9 @@ pub enum Turn {
     Move,
     MoveSelect((i8, i8), usize, Piece),
     ConvertSlashDemolish,
+    ConvertSlashDemolishDiscard((i8, i8), usize, Option<usize>, Option<usize>, Option<usize>),
+    ConvertSlashDemolishWhich((i8, i8), usize, Option<usize>, Option<usize>, Option<usize>),
+    ConvertSelect((i8, i8), usize, Option<usize>, Option<usize>, Option<usize>),
     Fly,
     FlySelectCarpet(Card, usize),
     FlySelect((i8, i8), Space, Card, usize),
@@ -88,6 +90,48 @@ pub enum Highlighted {
     NoHighlighting,
     PlayerOccupation,
 }
+
+pub struct Stashes {
+    pub player_stash: Stash,
+    pub cpu_stashes: Vec<Stash>,
+}
+
+impl Index<PieceColour> for Stashes {
+    type Output = Stash;
+
+    fn index<'a>(&'a self, colour: PieceColour) -> &'a Stash {
+
+        if self.player_stash.colour == colour {
+            return &self.player_stash;
+        } else {
+            for stash in self.cpu_stashes.iter() {
+                if stash.colour == colour {
+                    return stash;
+                }
+            }
+
+            panic!("Asked for a stash that wasn't there!");
+        }
+    }
+}
+
+impl IndexMut<PieceColour> for Stashes {
+    fn index_mut<'a>(&'a mut self, colour: PieceColour) -> &'a mut Stash {
+        if self.player_stash.colour == colour {
+            return &mut self.player_stash;
+        } else {
+            for stash in self.cpu_stashes.iter_mut() {
+                if stash.colour == colour {
+                    return stash;
+                }
+            }
+
+            panic!("Asked for a stash that wasn't there!");
+        }
+    }
+}
+
+
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub struct Stash {
@@ -218,7 +262,7 @@ pub struct SpacePieces(pub [Option<Piece>; MAX_PIECES_PER_SPACE]);
 
 //All `None`s are assumed to be at the end of the array
 impl SpacePieces {
-    pub fn take_if_present(&mut self, index: usize) -> Option<Piece> {
+    pub fn remove(&mut self, index: usize) -> Option<Piece> {
         if index >= MAX_PIECES_PER_SPACE {
             return None;
         }
@@ -273,7 +317,7 @@ impl SpacePieces {
         self.0[index] = Some(piece)
     }
 
-    pub fn get_mut_if_present(&mut self, index: usize) -> Option<&mut Piece> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut Piece> {
         if index >= MAX_PIECES_PER_SPACE {
             return None;
         }
@@ -282,6 +326,14 @@ impl SpacePieces {
             Some(ref mut piece) => Some(piece),
             None => None,
         }
+    }
+
+    pub fn get(&self, index: usize) -> Option<Piece> {
+        if index >= MAX_PIECES_PER_SPACE {
+            return None;
+        }
+
+        self.0[index]
     }
 
     pub fn any<F>(&self, f: F) -> bool
@@ -455,7 +507,7 @@ impl From<PieceColour> for i32 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pips {
     One,
     Two,
@@ -478,6 +530,31 @@ impl AllValues for Pips {
 }
 
 all_values_rand_impl!(Pips);
+
+impl From<Pips> for u8 {
+    fn from(pips: Pips) -> Self {
+        match pips {
+            Pips::One => 1,
+            Pips::Two => 2,
+            Pips::Three => 3,
+        }
+    }
+}
+
+use std::cmp::Ordering;
+
+impl Ord for Pips {
+    fn cmp(&self, other: &Pips) -> Ordering {
+        u8::from(*self).cmp(&u8::from(*other))
+    }
+}
+
+impl PartialOrd for Pips {
+    fn partial_cmp(&self, other: &Pips) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
 

@@ -10,3 +10,4 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
   * Draw
 * text rendering with `rusttype`
 * gameplay
+* add option to use jokers
