@@ -142,6 +142,7 @@ fn make_state(mut rng: StdRng) -> State {
     state
 }
 
+#[derive(Debug)]
 enum Action {
     SelectPiece((i8, i8), usize),
     SelectSpace((i8, i8)),
@@ -415,7 +416,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
             let button_outcome = match state.turn {
-                Move | Grow => {
+                Move | Grow | ConvertSlashDemolish => {
                     button_logic(
                         &mut state.ui_context,
                         Button {
@@ -625,7 +626,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
 
-
     match draw_hud(
         p,
         state,
@@ -653,6 +653,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         _ => {}
+    }
+
+    match action {
+        NoAction => {}
+        _ => {
+            println!("{:?}", action);
+        }
     }
 
     let t = state.turn;
@@ -866,7 +873,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             (None, Some(&card), None) |
                             (None, None, Some(&card)) => {
                                 let v = pip_value(card);
-
+                                println!("{:?}", v);
                                 (v, v)
                             }
                             (Some(&card1), Some(&card2), None) |
@@ -885,7 +892,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
                             }
                         };
-
                     state.turn = if pips_selected >= pips_needed &&
                         smallest_card_value > pips_selected - pips_needed
                     {
@@ -942,10 +948,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 }
 
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn =
-                    ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+            };
+
+            if right_mouse_pressed || escape_pressed {
+                state.turn = match state.turn {
+                    ConvertSlashDemolishDiscard(_, _, None, None, None) => ConvertSlashDemolish,
+                    _ => ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None),
+                };
             }
+
         }
         ConvertSlashDemolishWhich(space_coords,
                                   piece_index,
@@ -1001,17 +1012,78 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
                     card_index_3.map(|i| hand.remove(i));
+                    state.turn = SelectTurnOption;
                 };
 
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
+            };
+
+            if right_mouse_pressed || escape_pressed {
+                state.turn = ConvertSlashDemolishWhich(
+                    space_coords,
+                    piece_index,
+                    card_index_1,
+                    card_index_2,
+                    card_index_3,
+                );
             }
 
         }
         ConvertSelect(space_coords, piece_index, card_index_1, card_index_2, card_index_3) => {
-            //TODO indicate what to do?
-            //TODO "choose" automatically if there is one choice?
-            if let SelectPieceFromStash(pips, stash_colour) = action {
+            let stash_colour = state.stashes.player_stash.colour;
+
+            let (has_one, has_two, has_three) = {
+                let stash = &state.stashes[stash_colour];
+
+                (
+                    stash[Pips::One] != NoneLeft,
+                    stash[Pips::Two] != NoneLeft,
+                    stash[Pips::Three] != NoneLeft,
+                )
+            };
+
+            let mut selected_pips = None;
+
+            if has_one &&
+                turn_options_button(
+                    p,
+                    &mut state.ui_context,
+                    "Small",
+                    (-2.0 / 3.0, 0.875),
+                    700,
+                    (mouse_x, mouse_y),
+                    mouse_button_state,
+                )
+            {
+                selected_pips = Some(Pips::One);
+            }
+            if has_two &&
+                turn_options_button(
+                    p,
+                    &mut state.ui_context,
+                    "Medium",
+                    (0.0, 0.875),
+                    701,
+                    (mouse_x, mouse_y),
+                    mouse_button_state,
+                )
+            {
+                selected_pips = Some(Pips::Two);
+            }
+            if has_three &&
+                turn_options_button(
+                    p,
+                    &mut state.ui_context,
+                    "Large",
+                    (2.0 / 3.0, 0.875),
+                    702,
+                    (mouse_x, mouse_y),
+                    mouse_button_state,
+                )
+            {
+                selected_pips = Some(Pips::Three);
+            }
+
+            if let Some(pips) = selected_pips {
                 if let Some(space) = state.board.get_mut(&space_coords) {
 
                     if let Some(piece) = space.pieces.get_mut(piece_index) {
@@ -1739,6 +1811,9 @@ fn draw_hud(
 
         let pointer_inside = match state.turn {
             Build | Hatch => card.is_number() && selected_index == Some(i),
+            ConvertSlashDemolishDiscard(_, _, _, _, _) => {
+                !card.is_number() && selected_index == Some(i)
+            }
             Fly => card.value == Ace && selected_index == Some(i),
             _ => false,
         };
