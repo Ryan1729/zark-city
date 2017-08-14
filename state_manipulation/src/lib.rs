@@ -4,7 +4,6 @@ extern crate common;
 use common::*;
 use common::Projection::*;
 use common::Turn::*;
-use common::Pips::*;
 use common::Value::*;
 use common::PiecesLeft::*;
 use common::Highlighted::*;
@@ -124,7 +123,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: SelectTurnOption,
+        turn: DrawInitialCard,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -665,9 +664,27 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let t = state.turn;
 
     match state.turn {
-        DrawInitialCard => {}
+        DrawInitialCard => {
+            //TODO drawing sound effect or other indication?
+            if let Some(card) = deal(state) {
+                state.player_hand.push(card);
+            }
+            state.turn = SelectTurnOption;
+        }
         SelectTurnOption => {}
-        DrawThree => {}
+        DrawThree => {
+            //TODO drawing sound effect or other indication?
+            if let Some(card) = deal(state) {
+                state.player_hand.push(card);
+            }
+            if let Some(card) = deal(state) {
+                state.player_hand.push(card);
+            }
+            if let Some(card) = deal(state) {
+                state.player_hand.push(card);
+            }
+            state.turn = DrawInitialCard;
+        }
         Grow => {
             if let SelectPiece(space_coords, piece_index) = action {
                 if grow_if_available(
@@ -678,7 +695,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 )
                 {
 
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.turn = SelectTurnOption;
@@ -687,7 +704,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Spawn => {
             if let SelectSpace(key) = action {
                 if spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.turn = SelectTurnOption;
@@ -763,7 +780,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
@@ -830,7 +847,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
 
 
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -1012,7 +1029,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
                     card_index_3.map(|i| hand.remove(i));
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 };
 
             };
@@ -1092,7 +1109,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
                                 state.stashes[piece.colour].add(*piece);
                                 *piece = stash_piece;
-                                state.turn = SelectTurnOption;
+                                state.turn = DrawInitialCard;
                             }
 
                         }
@@ -1197,7 +1214,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if adjacent_empty_spaces.contains(&key) {
                     state.board.insert(key, space);
 
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.board.insert(old_coords, space);
@@ -1294,7 +1311,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = SelectTurnOption;
+                    state.turn = DrawInitialCard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
