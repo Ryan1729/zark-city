@@ -1,6 +1,6 @@
 extern crate rand;
 
-use rand::{StdRng, Rand, Rng};
+use rand::{Rand, Rng, StdRng};
 
 use std::fmt;
 pub use std::collections::HashMap;

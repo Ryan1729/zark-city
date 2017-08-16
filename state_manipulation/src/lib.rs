@@ -11,7 +11,7 @@ use common::Participant::*;
 
 use std::default::Default;
 
-use rand::{StdRng, SeedableRng, Rng};
+use rand::{Rng, SeedableRng, StdRng};
 
 use std::collections::hash_map::Entry::Occupied;
 
@@ -177,8 +177,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
 
         match *event {
-            Event::Quit |
-            Event::KeyDown(Keycode::F10) => {
+            Event::Quit | Event::KeyDown(Keycode::F10) => {
                 return true;
             }
             Event::KeyDown(Keycode::Escape) => {
@@ -187,20 +186,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::KeyDown(Keycode::Space) => {
                 add_random_board_card(state);
             }
-            Event::KeyDown(Keycode::R) => {
-                if cfg!(debug_assertions) {
+            Event::KeyDown(Keycode::R) => if cfg!(debug_assertions) {
 
-                    state.board.clear();
-                    add_random_board_card(state);
+                state.board.clear();
+                add_random_board_card(state);
+            },
+            Event::KeyDown(Keycode::C) => if cfg!(debug_assertions) {
+                if let Some(card) = deal(state) {
+                    state.player_hand.push(card);
                 }
-            }
-            Event::KeyDown(Keycode::C) => {
-                if cfg!(debug_assertions) {
-                    if let Some(card) = deal(state) {
-                        state.player_hand.push(card);
-                    }
-                }
-            }
+            },
             Event::KeyDown(Keycode::V) => {
                 (p.set_verts)(get_vert_vecs());
             }
@@ -330,12 +325,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let mut action = NoAction;
 
-    for (grid_coords,
-         &Space {
-             card,
-             ref pieces,
-             offset: space_offset,
-         }) in state.board.iter()
+    for (
+        grid_coords,
+        &Space {
+            card,
+            ref pieces,
+            offset: space_offset,
+        },
+    ) in state.board.iter()
     {
         let (card_x, card_y, rotated) = get_card_spec(grid_coords);
 
@@ -416,16 +413,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
             let button_outcome = match state.turn {
-                Move | Grow | ConvertSlashDemolish => {
-                    button_logic(
-                        &mut state.ui_context,
-                        Button {
-                            id: piece_id,
-                            pointer_inside: on_piece,
-                            state: mouse_button_state,
-                        },
-                    )
-                }
+                Move | Grow | ConvertSlashDemolish => button_logic(
+                    &mut state.ui_context,
+                    Button {
+                        id: piece_id,
+                        pointer_inside: on_piece,
+                        state: mouse_button_state,
+                    },
+                ),
                 _ => Default::default(),
             };
 
@@ -593,8 +588,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 (600 + i) as _,
                 (mouse_x, mouse_y),
                 mouse_button_state,
-            )
-            {
+            ) {
                 state.turn = target_turn;
             };
         }
@@ -617,8 +611,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 (600 + top_row_len + i) as _,
                 (mouse_x, mouse_y),
                 mouse_button_state,
-            )
-            {
+            ) {
                 state.turn = target_turn;
             };
         }
@@ -640,18 +633,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     match action {
-        PageBack(space_coords) => {
-            if let Occupied(mut entry) = state.board.entry(space_coords) {
-                let mut space = entry.get_mut();
-                space.offset = space.offset.saturating_sub(PIECES_PER_PAGE);
-            }
-        }
-        PageForward(space_coords) => {
-            if let Occupied(mut entry) = state.board.entry(space_coords) {
-                let mut space = entry.get_mut();
-                space.offset = space.offset.saturating_add(PIECES_PER_PAGE);
-            }
-        }
+        PageBack(space_coords) => if let Occupied(mut entry) = state.board.entry(space_coords) {
+            let mut space = entry.get_mut();
+            space.offset = space.offset.saturating_sub(PIECES_PER_PAGE);
+        },
+        PageForward(space_coords) => if let Occupied(mut entry) = state.board.entry(space_coords) {
+            let mut space = entry.get_mut();
+            space.offset = space.offset.saturating_add(PIECES_PER_PAGE);
+        },
         _ => {}
     }
 
@@ -741,9 +730,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
 
                         //reverse it so the player wins ties
-                        pairs.iter().rev().max_by_key(|&&(_, c)|
-                            c.value.number_value()
-                        ).unwrap().0
+                        pairs
+                            .iter()
+                            .rev()
+                            .max_by_key(|&&(_, c)| c.value.number_value())
+                            .unwrap()
+                            .0
                     };
 
                     let starter_cards = StarterCards {
@@ -763,7 +755,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
                 //TODO cpu placement
 
-                current_participant = next_participant(cpu_player_count(state), current_participant);
+                current_participant =
+                    next_participant(cpu_player_count(state), current_participant);
 
                 if current_participant == starter_cards.first {
                     //TODO start at actual first participant instead of the player
@@ -778,7 +771,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 let mut result = HashSet::new();
 
                 if state.board.len() == 0 {
-                    result.insert((0,0));
+                    result.insert((0, 0));
                 } else {
                     let full_spaces = state.board.keys();
 
@@ -804,14 +797,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &possible_targets,
                 starter_cards.player_card,
                 (world_mouse_x, world_mouse_y),
-                mouse_button_state
+                mouse_button_state,
             );
 
             if let Some(key) = target_space_coords {
                 let cpu_player_count = cpu_player_count(state);
                 let stash = &mut state.stashes.player_stash;
-                let space_and_piece_available = stash[Pips::One] != NoneLeft &&
-                    state.board.get(&key).is_none();
+                let space_and_piece_available =
+                    stash[Pips::One] != NoneLeft && state.board.get(&key).is_none();
 
                 debug_assert!(space_and_piece_available);
 
@@ -855,46 +848,39 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             state.turn = DrawInitialCard;
         }
-        Grow => {
-            if let SelectPiece(space_coords, piece_index) = action {
-                if grow_if_available(
-                    space_coords,
-                    piece_index,
-                    &mut state.board,
-                    &mut state.stashes.player_stash,
-                )
-                {
+        Grow => if let SelectPiece(space_coords, piece_index) = action {
+            if grow_if_available(
+                space_coords,
+                piece_index,
+                &mut state.board,
+                &mut state.stashes.player_stash,
+            ) {
 
-                    state.turn = DrawInitialCard;
-                }
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
+                state.turn = DrawInitialCard;
             }
-        }
-        Spawn => {
-            if let SelectSpace(key) = action {
-                if spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
-                    state.turn = DrawInitialCard;
-                }
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
+        Spawn => if let SelectSpace(key) = action {
+            if spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
+                state.turn = DrawInitialCard;
             }
-        }
-        Build => {
-            if let SelectCardFromHand(index) = action {
-                let valid_target = if let Some(card) = state.player_hand.get(index) {
-                    card.is_number()
-                } else {
-                    false
-                };
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
+        Build => if let SelectCardFromHand(index) = action {
+            let valid_target = if let Some(card) = state.player_hand.get(index) {
+                card.is_number()
+            } else {
+                false
+            };
 
-                if valid_target {
-                    state.turn = BuildSelect(state.player_hand.remove(index), index);
-                }
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
+            if valid_target {
+                state.turn = BuildSelect(state.player_hand.remove(index), index);
             }
-        }
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
         BuildSelect(held_card, old_index) => {
             let build_targets =
                 get_all_build_targets(&state.board, state.stashes.player_stash.colour);
@@ -906,7 +892,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &build_targets,
                 held_card,
                 (world_mouse_x, world_mouse_y),
-                mouse_button_state
+                mouse_button_state,
             );
 
             if let Some(key) = target_space_coords {
@@ -927,18 +913,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = SelectTurnOption;
             }
         }
-        Move => {
-            if let SelectPiece(space_coords, piece_index) = action {
-                if let Occupied(mut entry) = state.board.entry(space_coords) {
-                    let mut space = entry.get_mut();
-                    if let Some(piece) = space.pieces.remove(piece_index) {
-                        state.turn = MoveSelect(space_coords, piece_index, piece);
-                    }
+        Move => if let SelectPiece(space_coords, piece_index) = action {
+            if let Occupied(mut entry) = state.board.entry(space_coords) {
+                let mut space = entry.get_mut();
+                if let Some(piece) = space.pieces.remove(piece_index) {
+                    state.turn = MoveSelect(space_coords, piece_index, piece);
                 }
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
             }
-        }
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
         MoveSelect(space_coords, piece_index, piece) => {
 
             draw_piece(
@@ -998,19 +982,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = SelectTurnOption;
             }
         }
-        ConvertSlashDemolish => {
-            if let SelectPiece(space_coords, piece_index) = action {
-                state.turn =
-                    ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
-            }
-        }
-        ConvertSlashDemolishDiscard(space_coords,
-                                    piece_index,
-                                    card_index_1,
-                                    card_index_2,
-                                    card_index_3) => {
+        ConvertSlashDemolish => if let SelectPiece(space_coords, piece_index) = action {
+            state.turn = ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
+        ConvertSlashDemolishDiscard(
+            space_coords,
+            piece_index,
+            card_index_1,
+            card_index_2,
+            card_index_3,
+        ) => {
             if let Some(space) = state.board.get(&space_coords) {
                 if let Some(piece) = space.pieces.get(piece_index) {
 
@@ -1018,36 +1001,35 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                     let hand = &state.player_hand;
 
-                    let (pips_selected, smallest_card_value) =
-                        match (
-                            card_index_1.and_then(|i| hand.get(i)),
-                            card_index_2.and_then(|i| hand.get(i)),
-                            card_index_3.and_then(|i| hand.get(i)),
-                        ) {
-                            (None, None, None) => (0, 0),
-                            (Some(&card), None, None) |
-                            (None, Some(&card), None) |
-                            (None, None, Some(&card)) => {
-                                let v = pip_value(card);
-                                println!("{:?}", v);
-                                (v, v)
-                            }
-                            (Some(&card1), Some(&card2), None) |
-                            (None, Some(&card1), Some(&card2)) |
-                            (Some(&card1), None, Some(&card2)) => {
-                                let v1 = pip_value(card1);
-                                let v2 = pip_value(card2);
+                    let (pips_selected, smallest_card_value) = match (
+                        card_index_1.and_then(|i| hand.get(i)),
+                        card_index_2.and_then(|i| hand.get(i)),
+                        card_index_3.and_then(|i| hand.get(i)),
+                    ) {
+                        (None, None, None) => (0, 0),
+                        (Some(&card), None, None) |
+                        (None, Some(&card), None) |
+                        (None, None, Some(&card)) => {
+                            let v = pip_value(card);
+                            println!("{:?}", v);
+                            (v, v)
+                        }
+                        (Some(&card1), Some(&card2), None) |
+                        (None, Some(&card1), Some(&card2)) |
+                        (Some(&card1), None, Some(&card2)) => {
+                            let v1 = pip_value(card1);
+                            let v2 = pip_value(card2);
 
-                                (v1 + v2, std::cmp::min(v1, v2))
-                            }
-                            (Some(&card1), Some(&card2), Some(&card3)) => {
-                                let v1 = pip_value(card1);
-                                let v2 = pip_value(card2);
-                                let v3 = pip_value(card3);
+                            (v1 + v2, std::cmp::min(v1, v2))
+                        }
+                        (Some(&card1), Some(&card2), Some(&card3)) => {
+                            let v1 = pip_value(card1);
+                            let v2 = pip_value(card2);
+                            let v3 = pip_value(card3);
 
-                                (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
-                            }
-                        };
+                            (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
+                        }
+                    };
                     state.turn = if pips_selected >= pips_needed &&
                         smallest_card_value > pips_selected - pips_needed
                     {
@@ -1067,34 +1049,28 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 card_index_3.and_then(|i| hand.get(i)),
                             ) {
                                 (Some(_), Some(_), Some(_)) => state.turn,
-                                (Some(_), Some(_), _) => {
-                                    ConvertSlashDemolishDiscard(
-                                        space_coords,
-                                        piece_index,
-                                        card_index_1,
-                                        card_index_2,
-                                        Some(index),
-                                    )
-                                }
-                                (Some(_), _, _) => {
-                                    ConvertSlashDemolishDiscard(
-                                        space_coords,
-                                        piece_index,
-                                        card_index_1,
+                                (Some(_), Some(_), _) => ConvertSlashDemolishDiscard(
+                                    space_coords,
+                                    piece_index,
+                                    card_index_1,
+                                    card_index_2,
+                                    Some(index),
+                                ),
+                                (Some(_), _, _) => ConvertSlashDemolishDiscard(
+                                    space_coords,
+                                    piece_index,
+                                    card_index_1,
 
-                                        Some(index),
-                                        None,
-                                    )
-                                }
-                                _ => {
-                                    ConvertSlashDemolishDiscard(
-                                        space_coords,
-                                        piece_index,
-                                        Some(index),
-                                        None,
-                                        None,
-                                    )
-                                }
+                                    Some(index),
+                                    None,
+                                ),
+                                _ => ConvertSlashDemolishDiscard(
+                                    space_coords,
+                                    piece_index,
+                                    Some(index),
+                                    None,
+                                    None,
+                                ),
                             }
 
                         } else {
@@ -1114,11 +1090,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
 
         }
-        ConvertSlashDemolishWhich(space_coords,
-                                  piece_index,
-                                  card_index_1,
-                                  card_index_2,
-                                  card_index_3) => {
+        ConvertSlashDemolishWhich(
+            space_coords,
+            piece_index,
+            card_index_1,
+            card_index_2,
+            card_index_3,
+        ) => {
             let hand = &mut state.player_hand;
             let stash = &mut state.stashes.player_stash;
             if let Some(space) = state.board.get_mut(&space_coords) {
@@ -1145,8 +1123,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         700,
                         (mouse_x, mouse_y),
                         mouse_button_state,
-                    )
-                {
+                    ) {
                     state.turn = ConvertSelect(
                         space_coords,
                         piece_index,
@@ -1162,8 +1139,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     701,
                     (mouse_x, mouse_y),
                     mouse_button_state,
-                )
-                {
+                ) {
                     space.pieces.remove(piece_index);
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
@@ -1208,8 +1184,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     700,
                     (mouse_x, mouse_y),
                     mouse_button_state,
-                )
-            {
+                ) {
                 selected_pips = Some(Pips::One);
             }
             if has_two &&
@@ -1221,8 +1196,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     701,
                     (mouse_x, mouse_y),
                     mouse_button_state,
-                )
-            {
+                ) {
                 selected_pips = Some(Pips::Two);
             }
             if has_three &&
@@ -1234,8 +1208,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     702,
                     (mouse_x, mouse_y),
                     mouse_button_state,
-                )
-            {
+                ) {
                 selected_pips = Some(Pips::Three);
             }
 
@@ -1256,35 +1229,30 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             }
         }
-        Fly => {
-            if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
-                state.turn =
-                    FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
-            } else if let SelectCardFromHand(index) = action {
-                let valid_target = if let Some(card) = state.player_hand.get(index) {
-                    card.value == Ace
-                } else {
-                    false
-                };
+        Fly => if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
+            state.turn = FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
+        } else if let SelectCardFromHand(index) = action {
+            let valid_target = if let Some(card) = state.player_hand.get(index) {
+                card.value == Ace
+            } else {
+                false
+            };
 
-                if valid_target {
-                    state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
-                }
-            } else if right_mouse_pressed || escape_pressed {
-                state.turn = SelectTurnOption;
+            if valid_target {
+                state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
             }
-        }
-        FlySelectCarpet(ace, old_index) => {
-            if let SelectSpace(key) = action {
-                if let Some(space) = state.board.remove(&key) {
-                    state.turn = FlySelect(key, space, ace, old_index);
-                }
-            } else if right_mouse_pressed || escape_pressed {
-                state.player_hand.insert(old_index, ace);
+        } else if right_mouse_pressed || escape_pressed {
+            state.turn = SelectTurnOption;
+        },
+        FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
+            if let Some(space) = state.board.remove(&key) {
+                state.turn = FlySelect(key, space, ace, old_index);
+            }
+        } else if right_mouse_pressed || escape_pressed {
+            state.player_hand.insert(old_index, ace);
 
-                state.turn = SelectTurnOption;
-            }
-        }
+            state.turn = SelectTurnOption;
+        },
         FlySelect(old_coords, space, ace, old_index) => {
             let Space {
                 card,
@@ -1396,7 +1364,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &build_targets,
                 held_card,
                 (world_mouse_x, world_mouse_y),
-                mouse_button_state
+                mouse_button_state,
             );
 
             debug_assert!(state.stashes.player_stash.is_full());
@@ -1446,35 +1414,38 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         FlySelectCarpet(_, _) |
         FlySelect(_, _, _, _) |
         HatchSelect(_, _) => {}
-        _ => {
-            if escape_pressed {
-                return true;
-            }
-        }
+        _ => if escape_pressed {
+            return true;
+        },
     };
 
     false
 }
 
-fn place_card(p : &Platform, state: &mut State, view: &[f32;16], targets: &HashSet<(i8, i8)>, card: Card, (world_mouse_x, world_mouse_y): (f32,f32), button_state: ButtonState) -> Option<(i8,i8)>
-{
+fn place_card(
+    p: &Platform,
+    state: &mut State,
+    view: &[f32; 16],
+    targets: &HashSet<(i8, i8)>,
+    card: Card,
+    (world_mouse_x, world_mouse_y): (f32, f32),
+    button_state: ButtonState,
+) -> Option<(i8, i8)> {
     for grid_coords in targets.iter() {
         let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
 
         draw_empty_space(p, card_matrix);
     }
 
-    let close_enough_grid_coords =
-        get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
+    let close_enough_grid_coords = get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
 
     let in_place = close_enough_grid_coords.is_some();
 
-    let card_spec =
-        if in_place && targets.contains(&close_enough_grid_coords.unwrap()) {
-            get_card_spec(&close_enough_grid_coords.unwrap())
-        } else {
-            (world_mouse_x, world_mouse_y, false)
-        };
+    let card_spec = if in_place && targets.contains(&close_enough_grid_coords.unwrap()) {
+        get_card_spec(&close_enough_grid_coords.unwrap())
+    } else {
+        (world_mouse_x, world_mouse_y, false)
+    };
 
     let card_matrix = get_card_matrix(&view, card_spec);
 
@@ -1493,7 +1464,7 @@ fn place_card(p : &Platform, state: &mut State, view: &[f32;16], targets: &HashS
 
     draw_card(p, card_matrix, card.texture_spec());
 
-     if button_outcome.clicked {
+    if button_outcome.clicked {
         close_enough_grid_coords
     } else {
         None
@@ -1507,13 +1478,11 @@ fn cpu_player_count(state: &State) -> usize {
 fn next_participant(cpu_player_count: usize, participant: Participant) -> Participant {
     match participant {
         Player => Cpu(0),
-        Cpu(i) => {
-            if i >= cpu_player_count {
-                Player
-            } else {
-                Cpu(i + 1)
-            }
-        }
+        Cpu(i) => if i >= cpu_player_count {
+            Player
+        } else {
+            Cpu(i + 1)
+        },
     }
 }
 
@@ -2090,8 +2059,7 @@ fn draw_hud(
 
         let texture_spec = (
             3.0 * CARD_TEXTURE_WIDTH,
-            4.0 * CARD_TEXTURE_HEIGHT +
-                (colour_offset * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
+            4.0 * CARD_TEXTURE_HEIGHT + (colour_offset * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
             TOOLTIP_TEXTURE_WIDTH,
             TOOLTIP_TEXTURE_HEIGHT,
             0,
