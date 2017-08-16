@@ -7,6 +7,7 @@ use common::Turn::*;
 use common::Value::*;
 use common::PiecesLeft::*;
 use common::Highlighted::*;
+use common::Participant::*;
 
 use std::default::Default;
 
@@ -123,7 +124,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: DrawInitialCard,
+        turn: WhoStarts,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -664,6 +665,175 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let t = state.turn;
 
     match state.turn {
+        DrawUntilNumberCard => {
+            if !state.player_hand.iter().any(|c| c.is_number()) {
+                state.turn = RevealHand(Player);
+            } else {
+                for i in 0..state.cpu_hands.len() {
+                    let hand = &state.cpu_hands[i];
+                    if !hand.iter().any(|c| c.is_number()) {
+                        state.turn = RevealHand(Cpu(i));
+                        break;
+                    }
+                }
+            }
+
+            if let DrawUntilNumberCard = state.turn {
+                state.turn = WhoStarts;
+            }
+
+        }
+        RevealHand(participant) => {
+
+            //TODO draw hand on screen
+
+            //TODO should the CPU players remember the revealed cards?
+            if mouse_button_state.pressed {
+                if let Some(card) = deal(state) {
+                    state.player_hand.push(card);
+                }
+
+                for i in 0..state.cpu_hands.len() {
+                    if let Some(card) = deal(state) {
+                        state.cpu_hands[i].push(card);
+                    }
+                }
+
+                state.turn = DrawUntilNumberCard;
+            }
+        }
+        WhoStarts => {
+            if let SelectCardFromHand(index) = action {
+                let valid_target = if let Some(card) = state.player_hand.get(index) {
+                    card.is_number()
+                } else {
+                    false
+                };
+
+                if valid_target {
+                    let mut cpu_cards_vec = Vec::new();
+
+                    'hands: for hand in state.cpu_hands.iter_mut() {
+                        //TODO is there a reason for this not to be the first one?
+                        for i in 0..hand.len() {
+                            if hand[i].is_number() {
+                                cpu_cards_vec.push(hand.remove(i));
+                                continue 'hands;
+                            }
+                        }
+                    }
+
+                    debug_assert!(state.cpu_hands.len() == cpu_cards_vec.len());
+
+                    let mut cpu_cards = [None; MAX_PLAYERS - 1];
+
+                    for i in 0..cpu_cards_vec.len() {
+                        cpu_cards[i] = Some(cpu_cards_vec[i]);
+                    }
+
+                    let player_card = state.player_hand.remove(index);
+
+                    let first = {
+                        let mut pairs = vec![(Player, player_card)];
+
+                        for i in 0..cpu_cards_vec.len() {
+                            pairs.push((Cpu(i), cpu_cards_vec[i]));
+                        }
+
+                        //reverse it so the player wins ties
+                        pairs.iter().rev().max_by_key(|&&(_, c)|
+                            c.value.number_value()
+                        ).unwrap().0
+                    };
+
+                    let starter_cards = StarterCards {
+                        player_card,
+                        cpu_cards,
+                        first,
+                    };
+                    state.turn = FirstRound(starter_cards, first);
+                }
+            }
+        }
+        FirstRound(starter_cards, mut current_participant) => {
+            loop {
+                if current_participant == Player {
+                    state.turn = FirstRoundPlayer(starter_cards);
+                    break;
+                }
+                //TODO cpu placement
+
+                current_participant = next_participant(cpu_player_count(state), current_participant);
+
+                if current_participant == starter_cards.first {
+                    //TODO start at actual first participant instead of the player
+
+                    state.turn = DrawInitialCard;
+                    break;
+                }
+            }
+        }
+        FirstRoundPlayer(starter_cards) => {
+            let possible_targets = {
+                let mut result = HashSet::new();
+
+                if state.board.len() == 0 {
+                    result.insert((0,0));
+                } else {
+                    let full_spaces = state.board.keys();
+
+                    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+                    for &(x, y) in full_spaces {
+                        for &(dx, dy) in offsets.iter() {
+                            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+                            if !state.board.contains_key(&new_coords) {
+                                result.insert(new_coords);
+                            }
+                        }
+                    }
+                }
+
+                result
+            };
+
+            let target_space_coords = place_card(
+                p,
+                state,
+                &view,
+                &possible_targets,
+                starter_cards.player_card,
+                (world_mouse_x, world_mouse_y),
+                mouse_button_state
+            );
+
+            if let Some(key) = target_space_coords {
+                let cpu_player_count = cpu_player_count(state);
+                let stash = &mut state.stashes.player_stash;
+                let space_and_piece_available = stash[Pips::One] != NoneLeft &&
+                    state.board.get(&key).is_none();
+
+                debug_assert!(space_and_piece_available);
+
+                if space_and_piece_available {
+                    let mut space = Space::new(starter_cards.player_card);
+
+                    if let Some(piece) = stash.remove(Pips::One) {
+                        space.pieces.push(piece);
+                    }
+                    state.board.insert(key, space);
+                }
+
+                let next_participant = next_participant(cpu_player_count, Player);
+                if next_participant == starter_cards.first {
+                    //TODO start at actual first participant instead of the player
+
+                    state.turn = DrawInitialCard;
+                } else {
+                    state.turn = FirstRound(starter_cards, next_participant);
+                }
+            }
+        }
         DrawInitialCard => {
             //TODO drawing sound effect or other indication?
             if let Some(card) = deal(state) {
@@ -729,46 +899,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let build_targets =
                 get_all_build_targets(&state.board, state.stashes.player_stash.colour);
 
-            for grid_coords in build_targets.iter() {
-                let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
-
-                draw_empty_space(p, card_matrix);
-            }
-
-            let close_enough_grid_coords =
-                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
-
-            let in_place = close_enough_grid_coords.is_some();
-
-            let card_spec =
-                if in_place && build_targets.contains(&close_enough_grid_coords.unwrap()) {
-                    get_card_spec(&close_enough_grid_coords.unwrap())
-                } else {
-                    (world_mouse_x, world_mouse_y, false)
-                };
-
-            let card_matrix = get_card_matrix(&view, card_spec);
-
-            let button_outcome = if in_place {
-                button_logic(
-                    &mut state.ui_context,
-                    Button {
-                        id: 500,
-                        pointer_inside: true,
-                        state: mouse_button_state,
-                    },
-                )
-            } else {
-                Default::default()
-            };
-
-            draw_card(p, card_matrix, held_card.texture_spec());
-
-            let target_space_coords = if button_outcome.clicked {
-                close_enough_grid_coords
-            } else {
-                None
-            };
+            let target_space_coords = place_card(
+                p,
+                state,
+                &view,
+                &build_targets,
+                held_card,
+                (world_mouse_x, world_mouse_y),
+                mouse_button_state
+            );
 
             if let Some(key) = target_space_coords {
                 if build_targets.contains(&key) {
@@ -1250,46 +1389,15 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let build_targets =
                 get_all_build_targets(&state.board, state.stashes.player_stash.colour);
 
-            for grid_coords in build_targets.iter() {
-                let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
-
-                draw_empty_space(p, card_matrix);
-            }
-
-            let close_enough_grid_coords =
-                get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
-
-            let in_place = close_enough_grid_coords.is_some();
-
-            let card_spec =
-                if in_place && build_targets.contains(&close_enough_grid_coords.unwrap()) {
-                    get_card_spec(&close_enough_grid_coords.unwrap())
-                } else {
-                    (world_mouse_x, world_mouse_y, false)
-                };
-
-            let card_matrix = get_card_matrix(&view, card_spec);
-
-            let button_outcome = if in_place {
-                button_logic(
-                    &mut state.ui_context,
-                    Button {
-                        id: 500,
-                        pointer_inside: true,
-                        state: mouse_button_state,
-                    },
-                )
-            } else {
-                Default::default()
-            };
-
-            draw_card(p, card_matrix, held_card.texture_spec());
-
-            let target_space_coords = if button_outcome.clicked {
-                close_enough_grid_coords
-            } else {
-                None
-            };
+            let target_space_coords = place_card(
+                p,
+                state,
+                &view,
+                &build_targets,
+                held_card,
+                (world_mouse_x, world_mouse_y),
+                mouse_button_state
+            );
 
             debug_assert!(state.stashes.player_stash.is_full());
 
@@ -1346,6 +1454,67 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     false
+}
+
+fn place_card(p : &Platform, state: &mut State, view: &[f32;16], targets: &HashSet<(i8, i8)>, card: Card, (world_mouse_x, world_mouse_y): (f32,f32), button_state: ButtonState) -> Option<(i8,i8)>
+{
+    for grid_coords in targets.iter() {
+        let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
+
+        draw_empty_space(p, card_matrix);
+    }
+
+    let close_enough_grid_coords =
+        get_close_enough_grid_coords(world_mouse_x, world_mouse_y);
+
+    let in_place = close_enough_grid_coords.is_some();
+
+    let card_spec =
+        if in_place && targets.contains(&close_enough_grid_coords.unwrap()) {
+            get_card_spec(&close_enough_grid_coords.unwrap())
+        } else {
+            (world_mouse_x, world_mouse_y, false)
+        };
+
+    let card_matrix = get_card_matrix(&view, card_spec);
+
+    let button_outcome = if in_place {
+        button_logic(
+            &mut state.ui_context,
+            Button {
+                id: 500,
+                pointer_inside: true,
+                state: button_state,
+            },
+        )
+    } else {
+        Default::default()
+    };
+
+    draw_card(p, card_matrix, card.texture_spec());
+
+     if button_outcome.clicked {
+        close_enough_grid_coords
+    } else {
+        None
+    }
+}
+
+fn cpu_player_count(state: &State) -> usize {
+    state.cpu_hands.len()
+}
+
+fn next_participant(cpu_player_count: usize, participant: Participant) -> Participant {
+    match participant {
+        Player => Cpu(0),
+        Cpu(i) => {
+            if i >= cpu_player_count {
+                Player
+            } else {
+                Cpu(i + 1)
+            }
+        }
+    }
 }
 
 fn pip_value(card: Card) -> u8 {
@@ -1827,7 +1996,7 @@ fn draw_hud(
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
 
         let pointer_inside = match state.turn {
-            Build | Hatch => card.is_number() && selected_index == Some(i),
+            Build | Hatch | WhoStarts => card.is_number() && selected_index == Some(i),
             ConvertSlashDemolishDiscard(_, _, _, _, _) => {
                 !card.is_number() && selected_index == Some(i)
             }

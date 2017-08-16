@@ -64,6 +64,11 @@ pub struct State {
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum Turn {
+    DrawUntilNumberCard,
+    RevealHand(Participant),
+    WhoStarts,
+    FirstRound(StarterCards, Participant),
+    FirstRoundPlayer(StarterCards),
     DrawInitialCard,
     SelectTurnOption,
     DrawThree,
@@ -89,6 +94,20 @@ pub enum Turn {
 pub enum Highlighted {
     NoHighlighting,
     PlayerOccupation,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Participant {
+    Player,
+    Cpu(usize),
+}
+use Participant::*;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct StarterCards {
+    pub player_card: Card,
+    pub cpu_cards: [Option<Card>; MAX_PLAYERS - 1],
+    pub first: Participant,
 }
 
 pub struct Stashes {
@@ -425,6 +444,15 @@ pub struct Space {
     pub offset: u8,
 }
 
+impl Space {
+    pub fn new(card: Card) -> Self {
+        Space {
+            card,
+            ..Default::default()
+        }
+
+    }
+}
 impl Rand for Space {
     fn rand<R: Rng>(rng: &mut R) -> Self {
         let mut pieces = SpacePieces::default();
@@ -713,6 +741,21 @@ impl Value {
         match *self {
             Jack | Queen | King | Ace => false,
             _ => true,
+        }
+    }
+
+    pub fn number_value(&self) -> u8 {
+        match *self {
+            Jack | Queen | King | Ace => 0,
+            Two => 2,
+            Three => 3,
+            Four => 4,
+            Five => 5,
+            Six => 6,
+            Seven => 7,
+            Eight => 8,
+            Nine => 9,
+            Ten => 10,
         }
     }
 }
