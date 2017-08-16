@@ -124,7 +124,7 @@ fn make_state(mut rng: StdRng) -> State {
         window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
         ui_context: UIContext::new(),
         mouse_held: false,
-        turn: WhoStarts,
+        turn: DrawUntilNumberCard,
         deck,
         pile: Vec::new(),
         player_hand,
@@ -673,8 +673,47 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         }
         RevealHand(participant) => {
+            {
+                let hand = match participant {
+                    Player => &state.player_hand,
+                    Cpu(i) => &state.cpu_hands[i],
+                };
 
-            //TODO draw hand on screen
+                let card_scale = 1.0;
+
+                let half_hand_len = (hand.len() / 2) as isize;
+
+                for (i, card) in hand.iter().enumerate() {
+                    let (card_x, card_y) = ((i as isize - half_hand_len) as f32 / 2.0, 0.0);
+
+                    let hand_camera_matrix = [
+                        card_scale,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        card_scale,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        card_x,
+                        card_y,
+                        0.0,
+                        1.0,
+                    ];
+
+                    let card_matrix = mat4x4_mul(&hand_camera_matrix, &view);
+
+                    draw_card(p, card_matrix, card.texture_spec());
+
+                }
+
+
+            }
+
 
             //TODO should the CPU players remember the revealed cards?
             if mouse_button_state.pressed {
@@ -749,11 +788,46 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         FirstRound(starter_cards, mut current_participant) => {
             loop {
-                if current_participant == Player {
-                    state.turn = FirstRoundPlayer(starter_cards);
-                    break;
+                match current_participant {
+
+                    Player => {
+                        state.turn = FirstRoundPlayer(starter_cards);
+                        break;
+                    }
+                    Cpu(i) => {
+                        let possible_targets_set = first_round_targets(&state.board);
+
+                        let mut possible_targets: Vec<_> = possible_targets_set.iter().collect();
+
+                        //TODO should we try to make a power block? or avoid one?
+
+                        //we want the order to be a function of the random seed
+                        possible_targets.sort();
+                        state.rng.shuffle(&mut possible_targets);
+
+                        if let Some(key) = possible_targets.pop() {
+                            let stash = &mut state.stashes.cpu_stashes[i];
+                            let space_and_piece_available =
+                                stash[Pips::One] != NoneLeft && state.board.get(key).is_none();
+
+                            debug_assert!(space_and_piece_available);
+
+                            if space_and_piece_available {
+                                if let Some(card) = starter_cards.cpu_cards[i] {
+
+                                    let mut space = Space::new(card);
+
+                                    if let Some(piece) = stash.remove(Pips::One) {
+                                        space.pieces.push(piece);
+                                    }
+                                    state.board.insert(*key, space);
+                                }
+                            }
+
+                        }
+
+                    }
                 }
-                //TODO cpu placement
 
                 current_participant =
                     next_participant(cpu_player_count(state), current_participant);
@@ -767,28 +841,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         FirstRoundPlayer(starter_cards) => {
-            let possible_targets = {
-                let mut result = HashSet::new();
-
-                if state.board.len() == 0 {
-                    result.insert((0, 0));
-                } else {
-                    let full_spaces = state.board.keys();
-
-                    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-
-                    for &(x, y) in full_spaces {
-                        for &(dx, dy) in offsets.iter() {
-                            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
-                            if !state.board.contains_key(&new_coords) {
-                                result.insert(new_coords);
-                            }
-                        }
-                    }
-                }
-
-                result
-            };
+            let possible_targets = first_round_targets(&state.board);
 
             let target_space_coords = place_card(
                 p,
@@ -816,6 +869,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
                     state.board.insert(key, space);
                 }
+
 
                 let next_participant = next_participant(cpu_player_count, Player);
                 if next_participant == starter_cards.first {
@@ -1478,7 +1532,7 @@ fn cpu_player_count(state: &State) -> usize {
 fn next_participant(cpu_player_count: usize, participant: Participant) -> Participant {
     match participant {
         Player => Cpu(0),
-        Cpu(i) => if i >= cpu_player_count {
+        Cpu(i) => if i >= cpu_player_count - 1 {
             Player
         } else {
             Cpu(i + 1)
@@ -2164,7 +2218,8 @@ enum DrawState {
 use DrawState::*;
 
 ///This function handles the logic for a given button and returns wheter it was clicked
-///and the state of the button so it can be drawn properly elsewhere
+///and the state of the button so it can be drawn properly elsestate of the button so
+///it can be drawn properly elsewhere
 fn button_logic(context: &mut UIContext, button: Button) -> ButtonOutcome {
     /// In order for this to work properly `context.frame_init();`
     /// must be called at the start of each frame, before this function is called
@@ -2367,4 +2422,27 @@ fn clamp(current: f32, min: f32, max: f32) -> f32 {
     } else {
         current
     }
+}
+
+fn first_round_targets(board: &Board) -> HashSet<(i8, i8)> {
+    let mut result = HashSet::new();
+
+    if board.len() == 0 {
+        result.insert((0, 0));
+    } else {
+        let full_spaces = board.keys();
+
+        let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+        for &(x, y) in full_spaces {
+            for &(dx, dy) in offsets.iter() {
+                let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+                if !board.contains_key(&new_coords) {
+                    result.insert(new_coords);
+                }
+            }
+        }
+    }
+
+    result
 }
