@@ -60,6 +60,7 @@ pub struct State {
     pub stashes: Stashes,
     pub hud_alpha: f32,
     pub highlighted: Highlighted,
+    pub message: Message,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -102,6 +103,20 @@ pub enum Participant {
     Cpu(usize),
 }
 use Participant::*;
+
+pub struct Message {
+    pub text: String,
+    pub timeout: u32,
+}
+
+impl Default for Message {
+    fn default() -> Message {
+        Message {
+            text: Default::default(),
+            timeout: Default::default(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct StarterCards {

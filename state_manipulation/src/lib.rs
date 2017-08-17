@@ -135,6 +135,7 @@ fn make_state(mut rng: StdRng) -> State {
         },
         hud_alpha: 1.0,
         highlighted: PlayerOccupation,
+        message: Default::default(),
     };
 
     add_random_board_card(&mut state);
@@ -183,22 +184,31 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::KeyDown(Keycode::Escape) => {
                 escape_pressed = true;
             }
-            Event::KeyDown(Keycode::Space) => {
-                add_random_board_card(state);
-            }
-            Event::KeyDown(Keycode::R) => if cfg!(debug_assertions) {
-
-                state.board.clear();
+            Event::KeyDown(Keycode::Space) => if cfg!(debug_assertions) {
                 add_random_board_card(state);
             },
-            Event::KeyDown(Keycode::C) => if cfg!(debug_assertions) {
-                if let Some(card) = deal(state) {
-                    state.player_hand.push(card);
+            Event::KeyDown(Keycode::R) => if cfg!(debug_assertions) {
+                if cfg!(debug_assertions) {
+                    state.board.clear();
+                    add_random_board_card(state);
                 }
             },
-            Event::KeyDown(Keycode::V) => {
+            Event::KeyDown(Keycode::C) => if cfg!(debug_assertions) {
+                if cfg!(debug_assertions) {
+                    if let Some(card) = deal(state) {
+                        state.player_hand.push(card);
+                    }
+                }
+            },
+            Event::KeyDown(Keycode::V) => if cfg!(debug_assertions) {
                 (p.set_verts)(get_vert_vecs());
-            }
+            },
+            Event::KeyDown(Keycode::M) => if cfg!(debug_assertions) {
+                state.message = Message {
+                    text: "Test Message".to_owned(),
+                    timeout: 1500,
+                }
+            },
             Event::KeyDown(Keycode::Up) => {
                 state.cam_y += state.zoom * TRANSLATION_SCALE;
             }
@@ -264,7 +274,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     state.ui_context.frame_init();
 
-    state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > 0.675 {
+    state.hud_alpha += if state.mouse_pos.1 / state.window_wh.1 > HUD_LINE {
         FADE_RATE
     } else {
         -FADE_RATE
@@ -903,21 +913,32 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = DrawInitialCard;
         }
         Grow => if let SelectPiece(space_coords, piece_index) = action {
-            if grow_if_available(
+            match grow_if_available(
                 space_coords,
                 piece_index,
                 &mut state.board,
                 &mut state.stashes.player_stash,
             ) {
-
-                state.turn = DrawInitialCard;
+                Ok(true) => {
+                    state.turn = DrawInitialCard;
+                }
+                Ok(false) => {}
+                Err(message) => {
+                    state.message = message;
+                }
             }
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
         },
         Spawn => if let SelectSpace(key) = action {
-            if spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
-                state.turn = DrawInitialCard;
+            match spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
+                Ok(true) => {
+                    state.turn = DrawInitialCard;
+                }
+                Ok(false) => {}
+                Err(message) => {
+                    state.message = message;
+                }
             }
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
@@ -1456,6 +1477,85 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     //draw the hud here so the layering is correct
     (p.draw_layer)(1, state.hud_alpha);
 
+    //draw the message over top of everything
+    if state.message.timeout > 0 {
+        let message_location = (0.0, -((HUD_LINE * 2.0) - 1.0) + 0.125);
+
+        let alpha = if state.message.timeout > 512 {
+            1.0
+        } else {
+            state.message.timeout as f32 / 512.0
+        };
+
+        let outline_colour = [0.0, 0.0, 0.0, alpha];
+        let boosted_alpha = if alpha * 2.0 >= 1.0 { 1.0 } else { alpha * 2.0 };
+        let middle_alpha = if boosted_alpha >= alpha {
+            boosted_alpha
+        } else {
+            alpha
+        };
+        let middle_colour = [1.0, 1.0, 1.0, middle_alpha];
+
+
+        //a cheesy way to do an outline
+        (p.draw_text)(
+            &state.message.text,
+            (
+                message_location.0 + 1.0 / 512.0,
+                message_location.1 - 1.0 / 512.0,
+            ),
+            1.0,
+            24.5,
+            outline_colour,
+            0,
+        );
+        (p.draw_text)(
+            &state.message.text,
+            (
+                message_location.0 - 1.0 / 512.0,
+                message_location.1 + 1.0 / 512.0,
+            ),
+            1.0,
+            24.5,
+            outline_colour,
+            0,
+        );
+        (p.draw_text)(
+            &state.message.text,
+            (
+                message_location.0 - 1.0 / 512.0,
+                message_location.1 - 1.0 / 512.0,
+            ),
+            1.0,
+            24.5,
+            outline_colour,
+            0,
+        );
+        (p.draw_text)(
+            &state.message.text,
+            (
+                message_location.0 + 1.0 / 512.0,
+                message_location.1 + 1.0 / 512.0,
+            ),
+            1.0,
+            24.5,
+            outline_colour,
+            0,
+        );
+
+
+        (p.draw_text)(
+            &state.message.text,
+            message_location,
+            1.0,
+            24.0,
+            middle_colour,
+            0,
+        );
+
+        state.message.timeout = state.message.timeout.saturating_sub(16);
+    }
+
     if cfg!(debug_assertions) {
         if t != state.turn {
             println!("{:?}", state.turn);
@@ -1475,6 +1575,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     false
 }
+
+const HUD_LINE: f32 = 0.675;
+const WARNING_TIMEOUT: u32 = 2500;
 
 fn place_card(
     p: &Platform,
@@ -1627,17 +1730,28 @@ fn get_only_ace_index(hand: &Vec<Card>) -> Option<usize> {
     result
 }
 
-fn spawn_if_possible(board: &mut Board, key: &(i8, i8), stash: &mut Stash) -> bool {
-    if stash[Pips::One] != NoneLeft && is_occupied_by(board, key, stash.colour) {
+fn spawn_if_possible(
+    board: &mut Board,
+    key: &(i8, i8),
+    stash: &mut Stash,
+) -> Result<bool, Message> {
+    if stash[Pips::One] == NoneLeft {
+        return Err(Message {
+            text: "You are out of small pyramids!".to_owned(),
+            timeout: WARNING_TIMEOUT,
+        });
+    }
+
+    if is_occupied_by(board, key, stash.colour) {
         if let Some(mut space) = board.get_mut(key) {
             if let Some(piece) = stash.remove(Pips::One) {
                 space.pieces.push(piece);
-                return true;
+                return Ok(true);
             }
         }
     }
 
-    false
+    Ok(false)
 }
 
 fn is_occupied_by(board: &Board, grid_coords: &(i8, i8), colour: PieceColour) -> bool {
@@ -1657,7 +1771,7 @@ fn grow_if_available(
     piece_index: usize,
     board: &mut Board,
     stash: &mut Stash,
-) -> bool {
+) -> Result<bool, Message> {
     if let Occupied(mut entry) = board.entry(space_coords) {
         let mut space = entry.get_mut();
         if let Some(piece) = space.pieces.get_mut(piece_index) {
@@ -1670,20 +1784,26 @@ fn grow_if_available(
                             *piece = larger_piece;
                             stash.add(temp);
 
-                            return true;
+                            return Ok(true);
                         }
                     }
                     Pips::Three => {
-                        //TODO indicate illegal move
+                        return Err(Message {
+                            text: "That pyramid is already maximum size!".to_owned(),
+                            timeout: WARNING_TIMEOUT,
+                        });
                     }
                 }
             } else {
-                //TODO indicate illegal move
+                return Err(Message {
+                    text: "You cannot grow another player's piece!".to_owned(),
+                    timeout: WARNING_TIMEOUT,
+                });
             }
         }
     }
 
-    false
+    Ok(false)
 }
 
 const PIECES_PER_PAGE: u8 = 4;
@@ -2017,6 +2137,7 @@ fn draw_hud(
         ];
 
         let card_matrix = mat4x4_mul(&hand_camera_matrix, &hud_view);
+
 
         let pointer_inside = match state.turn {
             Build | Hatch | WhoStarts => card.is_number() && selected_index == Some(i),
