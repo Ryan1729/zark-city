@@ -885,7 +885,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if next_participant == starter_cards.first {
                     //TODO start at actual first participant instead of the player
 
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 } else {
                     state.turn = FirstRound(starter_cards, next_participant);
                 }
@@ -910,7 +910,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let Some(card) = deal(state) {
                 state.player_hand.push(card);
             }
-            state.turn = DrawInitialCard;
+            state.turn = CpuTurn;
         }
         Grow => if let SelectPiece(space_coords, piece_index) = action {
             match grow_if_available(
@@ -920,7 +920,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &mut state.stashes.player_stash,
             ) {
                 Ok(true) => {
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
                 Ok(false) => {}
                 Err(message) => {
@@ -933,7 +933,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Spawn => if let SelectSpace(key) = action {
             match spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
                 Ok(true) => {
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
                 Ok(false) => {}
                 Err(message) => {
@@ -980,7 +980,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
@@ -1045,7 +1045,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
 
 
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -1219,7 +1219,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
                     card_index_3.map(|i| hand.remove(i));
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 };
 
             };
@@ -1296,7 +1296,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
                                 state.stashes[piece.colour].add(*piece);
                                 *piece = stash_piece;
-                                state.turn = DrawInitialCard;
+                                state.turn = CpuTurn;
                             }
 
                         }
@@ -1396,7 +1396,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if adjacent_empty_spaces.contains(&key) {
                     state.board.insert(key, space);
 
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.board.insert(old_coords, space);
@@ -1462,7 +1462,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
@@ -1470,7 +1470,93 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = SelectTurnOption;
             }
         }
-        CpuTurn => {}
+        CpuTurn => {
+            let cpu_player_count = cpu_player_count(state);
+            let mut current_participant = next_participant(cpu_player_count, Player);
+
+
+            while current_participant != Player {
+                let (hand, stash) = match current_participant {
+                    Player => {
+                        debug_assert!(false, "Attempting to take player's turn");
+                        (&mut state.player_hand, &mut state.stashes.player_stash)
+                    }
+                    Cpu(i) => (&mut state.cpu_hands[i], &mut state.stashes.cpu_stashes[i]),
+                };
+
+                let rng = &mut state.rng;
+
+                //DrawInitialCard
+                if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
+                    hand.push(card);
+                }
+
+                'turn: loop {
+
+                    //TODO better "AI". Evaluate every use of rng in this match statement
+                    // match rng.gen_range(0, 8) {
+                    match rng.gen_range(0, 2) {
+
+                        1 => {
+                            //Grow
+
+                            let colour = stash.colour;
+
+                            let mut occupied_spaces: Vec<_> =
+                                get_all_spaces_occupied_by(&state.board, colour)
+                                    .into_iter()
+                                    .collect();
+                            //the cpu's choices should be a function of the rng
+                            occupied_spaces.sort();
+
+                            if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
+                                let possible_piece_index =
+                                    state.board.get(&space_coords).and_then(|space| {
+
+                                        let own_pieces =
+                                            space.pieces.filtered_indicies(|p| p.colour == colour);
+                                        rng.choose(&own_pieces).map(|&i| i)
+                                    });
+
+                                if let Some(piece_index) = possible_piece_index {
+
+                                    match grow_if_available(
+                                        space_coords,
+                                        piece_index,
+                                        &mut state.board,
+                                        stash,
+                                    ) {
+                                        Ok(true) => {
+                                            break 'turn;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                        }
+                        _ => {
+                            //DrawThree
+                            if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
+                                hand.push(card);
+                            }
+                            if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
+                                hand.push(card);
+                            }
+                            if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
+                                hand.push(card);
+                            }
+
+                            break 'turn;
+                        }
+                    }
+                }
+
+                current_participant = next_participant(cpu_player_count, current_participant);
+            }
+
+            state.turn = DrawInitialCard;
+        }
         Over(piece_colour) => {}
     };
 

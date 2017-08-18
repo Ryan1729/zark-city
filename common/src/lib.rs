@@ -386,6 +386,23 @@ impl SpacePieces {
 
         false
     }
+
+    pub fn filtered_indicies<F>(&self, f: F) -> Vec<usize>
+    where
+        F: Fn(Piece) -> bool,
+    {
+        let mut result = Vec::new();
+
+        for i in 0..MAX_PIECES_PER_SPACE {
+            if let Some(piece) = self.0[i] {
+                if f(piece) {
+                    result.push(i);
+                }
+            }
+        }
+
+        result
+    }
 }
 
 
