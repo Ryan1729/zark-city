@@ -1479,6 +1479,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
             while current_participant != Player {
+                println!("current_participant: {:?}", current_participant);
                 let (hand, stash) = match current_participant {
                     Player => {
                         debug_assert!(false, "Attempting to take player's turn");
@@ -1539,7 +1540,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         2 => {
                             //Spawn
-                            println!("Spawn");
                             let colour = stash.colour;
 
                             let mut occupied_spaces: Vec<_> =
@@ -1555,6 +1555,37 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         break 'turn;
                                     }
                                     _ => {}
+                                }
+                            }
+                        }
+                        3 => {
+                            //Build
+                            println!("Build");
+
+                            let number_cards: Vec<_> = hand.iter()
+                                .enumerate()
+                                .filter(|&(_, c)| c.is_number())
+                                .map(|(i, _)| i)
+                                .collect();
+
+                            if let Some(&card_index) = rng.choose(&number_cards) {
+
+                                let build_targets: Vec<_> =
+                                    get_all_build_targets(&state.board, stash.colour)
+                                        .into_iter()
+                                        .collect();
+
+                                if let Some(&key) = rng.choose(&build_targets) {
+                                    state.board.insert(
+                                        key,
+                                        Space {
+                                            card: hand.remove(card_index),
+                                            ..Default::default()
+                                        },
+                                    );
+
+
+                                    break 'turn;
                                 }
                             }
                         }
