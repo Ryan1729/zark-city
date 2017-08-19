@@ -483,45 +483,48 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
 
-            let on_forward = on_card &&
-                point_in_square_on_card(
-                    (card_mouse_x, card_mouse_y),
-                    (forward_x, forward_y),
-                    scale,
-                    rotated,
+            if pieces.len() > (space_offset * PIECES_PER_PAGE) as _ {
+
+                let on_forward = on_card &&
+                    point_in_square_on_card(
+                        (card_mouse_x, card_mouse_y),
+                        (forward_x, forward_y),
+                        scale,
+                        rotated,
+                    );
+
+                let forward_button_outcome = button_logic(
+                    &mut state.ui_context,
+                    Button {
+                        id: arrow_id(card_id, true),
+                        pointer_inside: on_forward,
+                        state: mouse_button_state,
+                    },
                 );
 
-            let forward_button_outcome = button_logic(
-                &mut state.ui_context,
-                Button {
-                    id: arrow_id(card_id, true),
-                    pointer_inside: on_forward,
-                    state: mouse_button_state,
-                },
-            );
-
-            if forward_button_outcome.clicked {
-                action = PageForward(*grid_coords);
-            } else {
-                match forward_button_outcome.draw_state {
-                    Pressed => {
-                        forward_arrow_texture_spec.5 = 1.5;
-                        forward_arrow_texture_spec.6 = 1.5;
+                if forward_button_outcome.clicked {
+                    action = PageForward(*grid_coords);
+                } else {
+                    match forward_button_outcome.draw_state {
+                        Pressed => {
+                            forward_arrow_texture_spec.5 = 1.5;
+                            forward_arrow_texture_spec.6 = 1.5;
+                        }
+                        Hover => {
+                            forward_arrow_texture_spec.5 = -1.5;
+                            forward_arrow_texture_spec.7 = -1.5;
+                        }
+                        Inactive => {}
                     }
-                    Hover => {
-                        forward_arrow_texture_spec.5 = -1.5;
-                        forward_arrow_texture_spec.7 = -1.5;
-                    }
-                    Inactive => {}
-                }
-            };
+                };
 
-            (p.draw_textured_poly_with_matrix)(
-                forward_arrow_matrix,
-                SQUARE_POLY_INDEX,
-                forward_arrow_texture_spec,
-                0,
-            );
+                (p.draw_textured_poly_with_matrix)(
+                    forward_arrow_matrix,
+                    SQUARE_POLY_INDEX,
+                    forward_arrow_texture_spec,
+                    0,
+                );
+            }
 
             if space_offset > 0 {
                 let backward_x = -CARD_RATIO + x_offset_amount;
@@ -1494,8 +1497,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 'turn: loop {
 
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    // match rng.gen_range(0, 8) {
-                    match rng.gen_range(0, 2) {
+                    match rng.gen_range(0, 8) {
 
                         1 => {
                             //Grow
@@ -1534,6 +1536,27 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 }
                             }
 
+                        }
+                        2 => {
+                            //Spawn
+                            println!("Spawn");
+                            let colour = stash.colour;
+
+                            let mut occupied_spaces: Vec<_> =
+                                get_all_spaces_occupied_by(&state.board, colour)
+                                    .into_iter()
+                                    .collect();
+                            //the cpu's choices should be a function of the rng
+                            occupied_spaces.sort();
+
+                            if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
+                                match spawn_if_possible(&mut state.board, &space_coords, stash) {
+                                    Ok(true) => {
+                                        break 'turn;
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                         _ => {
                             //DrawThree

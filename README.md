@@ -6,7 +6,8 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 
 # TODO
 * gameplay
-  * Initial card selection/first turn
   * implement turn options for Cpu players
     * extract procedures from player version
+  * highlighting
+    make sure cards/pieces are higlighted iff they are relevant
 * add option to use jokers
