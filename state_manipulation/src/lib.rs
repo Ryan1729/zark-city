@@ -1503,39 +1503,51 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         1 => {
                             //Grow
 
-                            let colour = stash.colour;
+                            let chosen_piece = {
 
-                            let mut occupied_spaces: Vec<_> =
-                                get_all_spaces_occupied_by(&state.board, colour)
-                                    .into_iter()
-                                    .collect();
-                            //the cpu's choices should be a function of the rng
-                            occupied_spaces.sort();
+                                let colour = stash.colour;
 
-                            if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
-                                let possible_piece_index =
-                                    state.board.get(&space_coords).and_then(|space| {
+                                let mut occupied_spaces: Vec<_> =
+                                    get_all_spaces_occupied_by(&state.board, colour)
+                                        .into_iter()
+                                        .collect();
+                                //the cpu's choices should be a function of the rng
+                                occupied_spaces.sort();
 
-                                        let own_pieces =
-                                            space.pieces.filtered_indicies(|p| p.colour == colour);
-                                        rng.choose(&own_pieces).map(|&i| i)
-                                    });
+                                if let Some(space_coords) =
+                                    rng.choose(&occupied_spaces).map(|&i| i)
+                                {
+                                    let possible_piece_index =
+                                        state.board.get(&space_coords).and_then(|space| {
 
-                                if let Some(piece_index) = possible_piece_index {
+                                            let own_pieces = space
+                                                .pieces
+                                                .filtered_indicies(|p| p.colour == colour);
+                                            rng.choose(&own_pieces).map(|&i| i)
+                                        });
 
-                                    match grow_if_available(
-                                        space_coords,
-                                        piece_index,
-                                        &mut state.board,
-                                        stash,
-                                    ) {
-                                        Ok(true) => {
-                                            break 'turn;
-                                        }
-                                        _ => {}
+                                    possible_piece_index
+                                        .map(|piece_index| (space_coords, piece_index))
+                                } else {
+                                    None
+                                }
+                            };
+
+                            if let Some((space_coords, piece_index)) = chosen_piece {
+
+                                match grow_if_available(
+                                    space_coords,
+                                    piece_index,
+                                    &mut state.board,
+                                    stash,
+                                ) {
+                                    Ok(true) => {
+                                        break 'turn;
                                     }
+                                    _ => {}
                                 }
                             }
+
 
                         }
                         2 => {
@@ -1560,8 +1572,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         3 => {
                             //Build
-                            println!("Build");
-
                             let number_cards: Vec<_> = hand.iter()
                                 .enumerate()
                                 .filter(|&(_, c)| c.is_number())
@@ -1586,6 +1596,73 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
                                     break 'turn;
+                                }
+                            }
+                        }
+                        4 => {
+                            //Move
+                            let chosen_piece = {
+
+                                let colour = stash.colour;
+
+                                let mut occupied_spaces: Vec<_> =
+                                    get_all_spaces_occupied_by(&state.board, colour)
+                                        .into_iter()
+                                        .collect();
+                                //the cpu's choices should be a function of the rng
+                                occupied_spaces.sort();
+
+                                if let Some(space_coords) =
+                                    rng.choose(&occupied_spaces).map(|&i| i)
+                                {
+                                    let possible_piece_index =
+                                        state.board.get(&space_coords).and_then(|space| {
+
+                                            let own_pieces = space
+                                                .pieces
+                                                .filtered_indicies(|p| p.colour == colour);
+                                            rng.choose(&own_pieces).map(|&i| i)
+                                        });
+
+                                    possible_piece_index
+                                        .map(|piece_index| (space_coords, piece_index))
+                                } else {
+                                    None
+                                }
+                            };
+
+                            if let Some((space_coords, piece_index)) = chosen_piece {
+                                let valid_targets: Vec<_> =
+                                    get_valid_move_targets(&state.board, space_coords)
+                                        .into_iter()
+                                        .collect();
+
+                                if let Some(target_space_coords) =
+                                    rng.choose(&valid_targets).map(|&i| i)
+                                {
+
+                                    let possible_piece = if let Occupied(mut source_entry) =
+                                        state.board.entry(space_coords)
+                                    {
+                                        let mut source_space = source_entry.get_mut();
+                                        source_space.pieces.remove(piece_index)
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(piece) = possible_piece {
+                                        if let Occupied(mut target_entry) =
+                                            state.board.entry(target_space_coords)
+                                        {
+                                            let mut target_space = target_entry.get_mut();
+
+                                            //shpuld this be an insert at 0
+                                            //so the new piece is clearly visible?
+                                            target_space.pieces.push(piece);
+
+                                            break 'turn;
+                                        }
+                                    }
                                 }
                             }
                         }
