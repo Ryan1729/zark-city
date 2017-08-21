@@ -138,8 +138,6 @@ fn make_state(mut rng: StdRng) -> State {
         message: Default::default(),
     };
 
-    add_random_board_card(&mut state);
-
     state
 }
 
@@ -188,16 +186,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 add_random_board_card(state);
             },
             Event::KeyDown(Keycode::R) => if cfg!(debug_assertions) {
-                if cfg!(debug_assertions) {
-                    state.board.clear();
-                    add_random_board_card(state);
-                }
+                state.board.clear();
             },
             Event::KeyDown(Keycode::C) => if cfg!(debug_assertions) {
-                if cfg!(debug_assertions) {
-                    if let Some(card) = deal(state) {
-                        state.player_hand.push(card);
-                    }
+                if let Some(card) = deal(state) {
+                    state.player_hand.push(card);
                 }
             },
             Event::KeyDown(Keycode::V) => if cfg!(debug_assertions) {
