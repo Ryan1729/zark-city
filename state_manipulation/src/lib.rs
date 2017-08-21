@@ -1323,6 +1323,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = SelectTurnOption;
         },
         FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
+            //TODO make sure the board will not be split in two
+            // if this card is moved, (diagonal adjacencies count).
             if let Some(space) = state.board.remove(&key) {
                 state.turn = FlySelect(key, space, ace, old_index);
             }
@@ -1506,7 +1508,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 'turn: loop {
 
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    match rng.gen_range(5, 8) {
+                    match rng.gen_range(6, 8) {
 
                         1 => {
                             //Grow
@@ -1816,8 +1818,56 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                                 };
                             };
+                        }
+                        6 => {
+                            let ace_indicies: Vec<_> = hand.iter()
+                                .enumerate()
+                                .filter(|&(_, c)| c.value == Ace)
+                                .map(|(i, _)| i)
+                                .collect();
+
+                            let chosen_space = {
+                                let board = &mut state.board;
+
+                                let mut spaces: Vec<_> = get_all_spaces_occupied_by(board, colour)
+                                    .iter()
+                                    .cloned()
+                                    .collect();
+                                //TODO make sure the board will not be split in two
+                                // if this card is moved, (diagonal adjacencies count).
+
+                                //the cpu's choices should be a function of the rng
+                                spaces.sort();
 
 
+                                rng.choose(&spaces)
+                                    .and_then(|key| board.remove(key).map(|space| (*key, space)))
+                            };
+
+                            if let Some((old_coords, space)) = chosen_space {
+                                let Space {
+                                    card,
+                                    pieces,
+                                    offset: space_offset,
+                                } = space;
+
+                                let adjacent_empty_spaces: Vec<
+                                    (i8, i8),
+                                > = {
+                                    let mut spaces =
+                                        get_all_diagonally_connected_empty_spaces(&state.board);
+                                    spaces.remove(&old_coords);
+                                    spaces.iter().cloned().collect()
+                                };
+
+                                let target_space_coords = rng.choose(&adjacent_empty_spaces);
+
+                                if let Some(key) = target_space_coords {
+                                    state.board.insert(*key, space);
+
+                                    break 'turn;
+                                }
+                            }
                         }
                         _ => {
                             //DrawThree
