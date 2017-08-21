@@ -1088,22 +1088,22 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         (Some(&card), None, None) |
                         (None, Some(&card), None) |
                         (None, None, Some(&card)) => {
-                            let v = pip_value(card);
+                            let v = pip_value(&card);
                             println!("{:?}", v);
                             (v, v)
                         }
                         (Some(&card1), Some(&card2), None) |
                         (None, Some(&card1), Some(&card2)) |
                         (Some(&card1), None, Some(&card2)) => {
-                            let v1 = pip_value(card1);
-                            let v2 = pip_value(card2);
+                            let v1 = pip_value(&card1);
+                            let v2 = pip_value(&card2);
 
                             (v1 + v2, std::cmp::min(v1, v2))
                         }
                         (Some(&card1), Some(&card2), Some(&card3)) => {
-                            let v1 = pip_value(card1);
-                            let v2 = pip_value(card2);
-                            let v3 = pip_value(card3);
+                            let v1 = pip_value(&card1);
+                            let v2 = pip_value(&card2);
+                            let v3 = pip_value(&card3);
 
                             (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
                         }
@@ -1299,6 +1299,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
                                 state.stashes[piece.colour].add(*piece);
                                 *piece = stash_piece;
+
+                                let hand = &mut state.player_hand;
+
+                                card_index_1.map(|i| hand.remove(i));
+                                card_index_2.map(|i| hand.remove(i));
+                                card_index_3.map(|i| hand.remove(i));
+
                                 state.turn = CpuTurn;
                             }
 
@@ -1480,12 +1487,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             while current_participant != Player {
                 println!("current_participant: {:?}", current_participant);
-                let (hand, stash) = match current_participant {
+                let (hand, colour, stashes) = match current_participant {
                     Player => {
                         debug_assert!(false, "Attempting to take player's turn");
-                        (&mut state.player_hand, &mut state.stashes.player_stash)
+                        (
+                            &mut state.player_hand,
+                            state.stashes.player_stash.colour,
+                            &mut state.stashes,
+                        )
                     }
-                    Cpu(i) => (&mut state.cpu_hands[i], &mut state.stashes.cpu_stashes[i]),
+                    Cpu(i) => (
+                        &mut state.cpu_hands[i],
+                        state.stashes.cpu_stashes[i].colour,
+                        &mut state.stashes,
+                    ),
                 };
 
                 let rng = &mut state.rng;
@@ -1498,14 +1513,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 'turn: loop {
 
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    match rng.gen_range(0, 8) {
+                    match rng.gen_range(5, 8) {
 
                         1 => {
                             //Grow
 
                             let chosen_piece = {
-
-                                let colour = stash.colour;
 
                                 let mut occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour)
@@ -1539,7 +1552,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     space_coords,
                                     piece_index,
                                     &mut state.board,
-                                    stash,
+                                    &mut stashes[colour],
                                 ) {
                                     Ok(true) => {
                                         break 'turn;
@@ -1552,8 +1565,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         2 => {
                             //Spawn
-                            let colour = stash.colour;
-
                             let mut occupied_spaces: Vec<_> =
                                 get_all_spaces_occupied_by(&state.board, colour)
                                     .into_iter()
@@ -1562,7 +1573,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             occupied_spaces.sort();
 
                             if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
-                                match spawn_if_possible(&mut state.board, &space_coords, stash) {
+                                match spawn_if_possible(
+                                    &mut state.board,
+                                    &space_coords,
+                                    &mut stashes[colour],
+                                ) {
                                     Ok(true) => {
                                         break 'turn;
                                     }
@@ -1581,7 +1596,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some(&card_index) = rng.choose(&number_cards) {
 
                                 let build_targets: Vec<_> =
-                                    get_all_build_targets(&state.board, stash.colour)
+                                    get_all_build_targets(&state.board, colour)
                                         .into_iter()
                                         .collect();
 
@@ -1602,8 +1617,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         4 => {
                             //Move
                             let chosen_piece = {
-
-                                let colour = stash.colour;
 
                                 let mut occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour)
@@ -1665,6 +1678,153 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     }
                                 }
                             }
+                        }
+                        5 => {
+                            //Convert/Demolish
+                            //TODO does it ever make sense to convert or demolish your own piece?
+
+                            let chosen_enemy_piece = {
+
+                                let mut spaces: Vec<_> = state.board.keys().cloned().collect();
+                                //the cpu's choices should be a function of the rng
+                                spaces.sort();
+
+                                let mut pieces = Vec::new();
+
+                                for key in spaces.iter() {
+                                    if let Some(space) = state.board.get(key) {
+                                        pieces.extend(
+                                            space
+                                                .pieces
+                                                .filtered_indicies(|piece| piece.colour != colour)
+                                                .iter()
+                                                .map(|i| (*key, *i)),
+                                        );
+                                    }
+                                }
+
+                                let result: Option<
+                                    ((i8, i8), usize),
+                                > = rng.choose(&pieces).cloned();
+
+                                result
+                            };
+
+                            if let Some((space_coords, piece_index)) = chosen_enemy_piece {
+                                if let Some(space) = state.board.get_mut(&space_coords) {
+                                    if let Some(piece) = space.pieces.get(piece_index).clone() {
+
+                                        let pips_needed = u8::from(piece.pips);
+
+                                        let selections = {
+
+
+                                            //TODO we might want to save particular cards to make a
+                                            // power block etc.
+                                            let mut card_choices :Vec<_> = hand.iter()
+                                            .enumerate()
+                                            .filter(|&(_, c)| !c.is_number())
+                                            .collect();
+
+                                            card_choices.sort_by(|&(_, a), &(_, b)| {
+                                                pip_value(&a).cmp(&pip_value(&b))
+                                            });
+
+                                            let mut selected_indicies = Vec::new();
+                                            let mut pips_selected = 0;
+                                            let mut smallest_card_value = 255;
+                                            while let Some((index, card)) = card_choices.pop() {
+
+                                                selected_indicies.push(index);
+                                                pips_selected += pip_value(card);
+                                                smallest_card_value = std::cmp::min(
+                                                    smallest_card_value,
+                                                    pip_value(card),
+                                                );
+
+                                                if pips_selected >= pips_needed {
+                                                    break;
+                                                }
+                                            }
+
+                                            if pips_selected >= pips_needed &&
+                                                smallest_card_value > pips_selected - pips_needed
+                                            {
+
+                                                let can_convert = match piece.pips {
+                                                    Pips::One => {
+                                                        stashes[colour][Pips::One] != NoneLeft
+                                                    }
+                                                    Pips::Two => {
+                                                        stashes[colour][Pips::One] != NoneLeft ||
+                                                            stashes[colour][Pips::Two] != NoneLeft
+                                                    }
+                                                    Pips::Three => {
+                                                        stashes[colour][Pips::One] != NoneLeft ||
+                                                            stashes[colour][Pips::Two] !=
+                                                                NoneLeft ||
+                                                            stashes[colour][Pips::Three] != NoneLeft
+                                                    }
+                                                };
+
+                                                Some((selected_indicies, can_convert))
+                                            } else {
+                                                None
+                                            }
+                                        };
+
+                                        //TODO You very rarely might want to demolish instead of
+                                        //convert to save a piece in your stash for a future turn
+
+                                        match selections {
+                                            Some((selected_indicies, true)) => {
+                                                //Convert
+
+                                                for &pips in
+                                                    vec![Pips::Three, Pips::Two, Pips::One].iter()
+                                                {
+
+                                                    if pips <= piece.pips {
+                                                        if let Some(stash_piece) =
+                                                            stashes[colour].remove(pips)
+                                                        {
+                                                            stashes[piece.colour].add(piece);
+
+                                                            if let Some(old_piece) =
+                                                                space.pieces.get_mut(piece_index)
+                                                            {
+                                                                *old_piece = stash_piece;
+
+                                                                for i in selected_indicies {
+                                                                    hand.remove(i);
+                                                                }
+                                                                break 'turn;
+                                                            }
+
+                                                        }
+
+                                                    }
+
+
+                                                }
+                                            }
+
+                                            Some((selected_indicies, false)) => {
+                                                //Demolish
+                                                space.pieces.remove(piece_index);
+                                                for i in selected_indicies {
+                                                    hand.remove(i);
+                                                }
+                                                break 'turn;
+                                            }
+                                            _ => {}
+                                        };
+                                    }
+
+                                };
+                            };
+
+
                         }
                         _ => {
                             //DrawThree
@@ -1860,11 +2020,11 @@ fn next_participant(cpu_player_count: usize, participant: Participant) -> Partic
     }
 }
 
-fn pip_value(card: Card) -> u8 {
+fn pip_value(card: &Card) -> u8 {
     match card.value {
         Ace | Jack /* | Joker*/ => 1,
-        Queen =>2,
-        King =>3,
+        Queen => 2,
+        King => 3,
         //this value ensures the set of cards will be rejected
         _ => 0,
     }
