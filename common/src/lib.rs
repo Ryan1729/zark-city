@@ -102,7 +102,6 @@ pub enum Participant {
     Player,
     Cpu(usize),
 }
-use Participant::*;
 
 pub struct Message {
     pub text: String,
@@ -1074,6 +1073,162 @@ mod id_tests {
     }
 }
 
+use std::collections::HashSet;
+
+#[cfg(test)]
+mod fly_check_tests {
+    use ::*;
+
+    #[test]
+    fn minimal() {
+        let mut board = HashMap::new();
+
+        board.insert((0, 0), Default::default());
+
+        let targets = fly_from_targets(&board, &(0, 0));
+
+        assert_eq!(targets, vec![]);
+    }
+
+    #[test]
+    fn all() {
+        let mut board = HashMap::new();
+
+        let one_up: (i8, i8) = (0, 1);
+
+        board.insert((0, 0), Default::default());
+        board.insert(one_up, Default::default());
+
+        let mut targets = fly_from_targets(&board, &one_up);
+
+        let mut expected: Vec<_> = EIGHT_WAY_OFFSETS
+            .iter()
+            .filter(|o| *o != &one_up)
+            .cloned()
+            .collect();
+
+        targets.sort();
+        expected.sort();
+
+        assert_eq!(targets, expected);
+    }
+
+    #[test]
+    fn some_not_all() {
+        let mut board = HashMap::new();
+
+        board.insert((0, -1), Default::default());
+        board.insert((0, 0), Default::default());
+        board.insert((0, 1), Default::default());
+
+        let mut targets = fly_from_targets(&board, &(0, 0));
+
+        let mut expected = vec![(-1, 0), (1, 0)];
+
+        targets.sort();
+        expected.sort();
+
+        assert_eq!(targets, expected);
+    }
+}
+
+pub fn is_space_movable(board: &Board, from: &(i8, i8)) -> bool {
+    fly_from_targets(board, from).len() > 0
+}
+
+pub fn fly_from_targets(board: &Board, from: &(i8, i8)) -> Vec<(i8, i8)> {
+    let targets = get_all_diagonally_connected_empty_spaces(board);
+
+    let mut result = Vec::new();
+
+    let mut remaining_spaces: HashSet<_> = board.keys().collect();
+
+    remaining_spaces.remove(from);
+
+    for target in targets {
+        if can_fly(&remaining_spaces, &target) {
+            result.push(target);
+        }
+    }
+
+    result
+        .iter()
+        .filter_map(|k| if k == from { None } else { Some(*k) })
+        .collect()
+}
+
+fn can_fly(remaining_spaces: &HashSet<&(i8, i8)>, to: &(i8, i8)) -> bool {
+    if remaining_spaces.contains(to) || remaining_spaces.len() == 0 {
+        return false;
+    }
+
+    let mut seen = HashSet::new();
+
+    can_fly_helper(&remaining_spaces, &mut seen, to, to)
+}
+
+fn can_fly_helper(
+    remaining_spaces: &HashSet<&(i8, i8)>,
+    seen: &mut HashSet<(i8, i8)>,
+    current: &(i8, i8),
+    to: &(i8, i8),
+) -> bool {
+    if seen.contains(&current) {
+        return false;
+    }
+
+    if remaining_spaces.contains(&current) || current == to {
+        seen.insert(*current);
+    } else {
+        return false;
+    }
+
+    //we're done when seen contains `to` and everything in `remaining_spaces`
+    if seen.len() > remaining_spaces.len() {
+        return true;
+    }
+
+    for &(x, y) in EIGHT_WAY_OFFSETS.iter() {
+        if can_fly_helper(
+            remaining_spaces,
+            seen,
+            &(x.saturating_add(current.0), y.saturating_add(current.1)),
+            to,
+        ) {
+            return true;
+        }
+    }
+
+    false
+}
+
+pub const EIGHT_WAY_OFFSETS: [(i8, i8); 8] = [
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+];
+
+pub fn get_all_diagonally_connected_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
+    let filled_coords = board.keys();
+
+    let mut result = HashSet::new();
+
+    for &(x, y) in filled_coords {
+        for &(dx, dy) in EIGHT_WAY_OFFSETS.iter() {
+            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+            if !board.contains_key(&new_coords) {
+                result.insert(new_coords);
+            }
+        }
+    }
+
+    result
+}
 
 #[cfg(test)]
 mod mat4x4_tests {

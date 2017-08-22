@@ -1082,7 +1082,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         (None, Some(&card), None) |
                         (None, None, Some(&card)) => {
                             let v = pip_value(&card);
-                            println!("{:?}", v);
+
                             (v, v)
                         }
                         (Some(&card1), Some(&card2), None) |
@@ -1311,7 +1311,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
         } else if let SelectCardFromHand(index) = action {
             let valid_target = if let Some(card) = state.player_hand.get(index) {
-                card.value == Ace
+                if card.value == Ace {
+                    true
+                } else {
+                    state.message = Message {
+                        text: "That card is not an Ace!".to_owned(),
+                        timeout: WARNING_TIMEOUT,
+                    };
+
+                    false
+                }
             } else {
                 false
             };
@@ -1323,10 +1332,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = SelectTurnOption;
         },
         FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
-            //TODO make sure the board will not be split in two
-            // if this card is moved, (diagonal adjacencies count).
-            if let Some(space) = state.board.remove(&key) {
-                state.turn = FlySelect(key, space, ace, old_index);
+            if is_space_movable(&state.board, &key) {
+                if let Some(space) = state.board.remove(&key) {
+                    state.turn = FlySelect(key, space, ace, old_index);
+                }
+            } else {
+                state.message = Message {
+                    text: "Moving that card leave a section of cards completely detached!"
+                        .to_owned(),
+                    timeout: WARNING_TIMEOUT,
+                }
             }
         } else if right_mouse_pressed || escape_pressed {
             state.player_hand.insert(old_index, ace);
@@ -1340,13 +1355,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 offset: space_offset,
             } = space;
 
-            let adjacent_empty_spaces = {
-                let mut spaces = get_all_diagonally_connected_empty_spaces(&state.board);
-                spaces.remove(&old_coords);
-                spaces
-            };
+            let fly_from_targets = fly_from_targets(&state.board, &old_coords);
 
-            for grid_coords in adjacent_empty_spaces.iter() {
+            for grid_coords in fly_from_targets.iter() {
                 let card_matrix = get_card_matrix(&view, get_card_spec(grid_coords));
 
                 draw_empty_space(p, card_matrix);
@@ -1358,7 +1369,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let in_place = close_enough_grid_coords.is_some();
 
             let card_spec =
-                if in_place && adjacent_empty_spaces.contains(&close_enough_grid_coords.unwrap()) {
+                if in_place && fly_from_targets.contains(&close_enough_grid_coords.unwrap()) {
                     get_card_spec(&close_enough_grid_coords.unwrap())
                 } else {
                     (world_mouse_x, world_mouse_y, false)
@@ -1398,7 +1409,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
 
             if let Some(key) = target_space_coords {
-                if adjacent_empty_spaces.contains(&key) {
+                if fly_from_targets.contains(&key) {
                     state.board.insert(key, space);
 
                     state.turn = CpuTurn;
@@ -1820,11 +1831,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             };
                         }
                         6 => {
+                            //Fly
                             let ace_indicies: Vec<_> = hand.iter()
                                 .enumerate()
                                 .filter(|&(_, c)| c.value == Ace)
                                 .map(|(i, _)| i)
                                 .collect();
+
+                            if ace_indicies.len() == 0 {
+                                continue 'turn;
+                            }
 
                             let chosen_space = {
                                 let board = &mut state.board;
@@ -1833,39 +1849,34 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     .iter()
                                     .cloned()
                                     .collect();
-                                //TODO make sure the board will not be split in two
-                                // if this card is moved, (diagonal adjacencies count).
 
                                 //the cpu's choices should be a function of the rng
                                 spaces.sort();
 
 
-                                rng.choose(&spaces)
-                                    .and_then(|key| board.remove(key).map(|space| (*key, space)))
+                                rng.choose(&spaces).and_then(
+                                    |key| if is_space_movable(board, key) {
+                                        board.remove(key).map(|space| (*key, space))
+
+                                    } else {
+                                        None
+                                    },
+                                )
                             };
 
                             if let Some((old_coords, space)) = chosen_space {
-                                let Space {
-                                    card,
-                                    pieces,
-                                    offset: space_offset,
-                                } = space;
+                                let fly_from_targets = fly_from_targets(&state.board, &old_coords);
 
-                                let adjacent_empty_spaces: Vec<
-                                    (i8, i8),
-                                > = {
-                                    let mut spaces =
-                                        get_all_diagonally_connected_empty_spaces(&state.board);
-                                    spaces.remove(&old_coords);
-                                    spaces.iter().cloned().collect()
-                                };
-
-                                let target_space_coords = rng.choose(&adjacent_empty_spaces);
+                                let target_space_coords = rng.choose(&fly_from_targets);
 
                                 if let Some(key) = target_space_coords {
-                                    state.board.insert(*key, space);
+                                    if let Some(ace_index) = rng.choose(&ace_indicies) {
+                                        hand.remove(*ace_index);
 
-                                    break 'turn;
+                                        state.board.insert(*key, space);
+
+                                        break 'turn;
+                                    }
                                 }
                             }
                         }
@@ -2321,34 +2332,6 @@ fn get_valid_move_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> 
         let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
         if board.contains_key(&new_coords) {
             result.insert(new_coords);
-        }
-    }
-
-    result
-}
-
-fn get_all_diagonally_connected_empty_spaces(board: &Board) -> HashSet<(i8, i8)> {
-    let filled_coords = board.keys();
-
-    let offsets = [
-        (1, 0),
-        (1, 1),
-        (0, 1),
-        (-1, 1),
-        (-1, 0),
-        (-1, -1),
-        (0, -1),
-        (1, -1),
-    ];
-
-    let mut result = HashSet::new();
-
-    for &(x, y) in filled_coords {
-        for &(dx, dy) in offsets.iter() {
-            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
-            if !board.contains_key(&new_coords) {
-                result.insert(new_coords);
-            }
         }
     }
 
