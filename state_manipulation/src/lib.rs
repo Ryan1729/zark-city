@@ -148,7 +148,6 @@ enum Action {
     PageBack((i8, i8)),
     PageForward((i8, i8)),
     SelectCardFromHand(usize),
-    SelectPieceFromStash(Pips, PieceColour),
     NoAction,
 }
 use Action::*;
@@ -1445,14 +1444,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         HatchSelect(held_card, old_index) => {
-            let build_targets =
-                get_all_build_targets(&state.board, state.stashes.player_stash.colour);
+            let hatch_targets =
+                get_all_hatch_targets(&state.board, state.stashes.player_stash.colour);
 
             let target_space_coords = place_card(
                 p,
                 state,
                 &view,
-                &build_targets,
+                &hatch_targets,
                 held_card,
                 (world_mouse_x, world_mouse_y),
                 mouse_button_state,
@@ -1461,7 +1460,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             debug_assert!(state.stashes.player_stash.is_full());
 
             if let Some(key) = target_space_coords {
-                if build_targets.contains(&key) {
+                if hatch_targets.contains(&key) {
                     let mut pieces: SpacePieces = Default::default();
 
                     if let Some(piece) = state.stashes.player_stash.remove(Pips::One) {
@@ -1519,8 +1518,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 'turn: loop {
 
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    match rng.gen_range(6, 8) {
-
+                    match rng.gen_range(6, 9) {
                         1 => {
                             //Grow
 
@@ -1566,8 +1564,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     _ => {}
                                 }
                             }
-
-
                         }
                         2 => {
                             //Spawn
@@ -1880,6 +1876,57 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 }
                             }
                         }
+                        7 => {
+                            //Hatch
+                            println!("Hatch");
+                            let mut stash = stashes[colour];
+
+                            let no_pieces_on_board = stash.is_full();
+                            if no_pieces_on_board {
+                                let number_cards: Vec<_> = hand.iter()
+                                    .enumerate()
+                                    .filter(|&(_, c)| c.is_number())
+                                    .map(|(i, _)| i)
+                                    .collect();
+
+                                if let Some(&card_index) = rng.choose(&number_cards) {
+                                    println!("Some(&card_index)");
+                                    let hatch_targets: Vec<
+                                        (i8, i8),
+                                    > = get_all_hatch_targets(&state.board, colour)
+                                        .iter()
+                                        .cloned()
+                                        .collect();
+
+                                    let target_space_coords = rng.choose(&hatch_targets);
+
+                                    if let Some(&key) = target_space_coords {
+                                        println!("Some(&key)");
+
+                                        let mut pieces: SpacePieces = Default::default();
+
+                                        if let Some(piece) = stash.remove(Pips::One) {
+                                            println!("Some(piece)");
+                                            pieces.push(piece);
+                                        }
+
+                                        state.board.insert(
+                                            key,
+                                            Space {
+                                                card: hand.remove(card_index),
+                                                pieces,
+
+                                                ..Default::default()
+                                            },
+                                        );
+
+                                        break 'turn;
+
+                                    }
+                                }
+                            }
+                        }
+
                         _ => {
                             //DrawThree
                             if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
@@ -2347,6 +2394,21 @@ fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)
 
     for &(x, y) in occupied_spaces.iter() {
         for &(dx, dy) in offsets.iter() {
+            let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+            if !board.contains_key(&new_coords) {
+                result.insert(new_coords);
+            }
+        }
+    }
+
+    result
+}
+
+fn get_all_hatch_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+    let mut result = HashSet::new();
+
+    for &(x, y) in board.keys() {
+        for &(dx, dy) in EIGHT_WAY_OFFSETS.iter() {
             let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
             if !board.contains_key(&new_coords) {
                 result.insert(new_coords);
