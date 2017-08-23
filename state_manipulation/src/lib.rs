@@ -656,6 +656,42 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
+    {
+        let power_blocks = power_blocks(&state.board);
+
+        // There is a way to have two winners: A player can move
+        // a piece from a contesed area to another whihc gives them a power block,
+        //while also leaving the contested block to another player.
+        //AFAICT that is the maximum possble though.
+        let mut winners = (None, None);
+
+        for block in power_blocks {
+            if let Some(controller) = single_controller(&state.stashes, &state.board, block) {
+                winners = match winners {
+                    (None, None) => (Some(controller), None),
+                    (Some(winner), _) | (_, Some(winner)) if winner == controller => winners,
+                    (Some(winner), Some(second_winner)) => {
+                        debug_assert!(second_winner == controller, "Three winners?!");
+                        winners
+                    }
+                    (Some(winner), None) => (Some(winner), Some(controller)),
+                    (None, Some(mistake)) => (None, Some(mistake)),
+
+                };
+            }
+        }
+
+        if let Some(winner) = winners.0 {
+            state.turn = if winners.1 == Some(Player) {
+                //player gets top billing
+                Over(Player, Some(winner))
+            } else {
+                Over(winner, winners.1)
+            };
+
+        }
+    }
+
     let t = state.turn;
 
     match state.turn {
@@ -1516,9 +1552,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
 
                 'turn: loop {
-
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    match rng.gen_range(6, 9) {
+                    match rng.gen_range(0, 8) {
                         1 => {
                             //Grow
 
@@ -1949,8 +1984,39 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             state.turn = DrawInitialCard;
         }
-        Over(piece_colour) => {}
+        Over(winner, possible_second_winner) => {
+            fn win_message(participant: Participant) -> String {
+                match participant {
+                    Player => "You win".to_owned(),
+                    Cpu(i) => format!("Cpu {} wins", i),
+                }
+            }
+            let text = format!("{}!", win_message(winner));
+
+            draw_outlined_text(
+                p,
+                &text,
+                (0.0, 0.875),
+                1.0,
+                36.0,
+                [1.0, 1.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            );
+
+            if let Some(second_winner) = possible_second_winner {
+                draw_outlined_text(
+                    p,
+                    &format!("{} as well!", win_message(second_winner)),
+                    (0.0, 0.75),
+                    1.0,
+                    36.0,
+                    [1.0, 1.0, 1.0, 1.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                );
+            }
+        }
     };
+
 
     //draw the hud here so the layering is correct
     (p.draw_layer)(1, state.hud_alpha);
@@ -1974,61 +2040,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         };
         let middle_colour = [1.0, 1.0, 1.0, middle_alpha];
 
-
-        //a cheesy way to do an outline
-        (p.draw_text)(
-            &state.message.text,
-            (
-                message_location.0 + 1.0 / 512.0,
-                message_location.1 - 1.0 / 512.0,
-            ),
-            1.0,
-            24.5,
-            outline_colour,
-            0,
-        );
-        (p.draw_text)(
-            &state.message.text,
-            (
-                message_location.0 - 1.0 / 512.0,
-                message_location.1 + 1.0 / 512.0,
-            ),
-            1.0,
-            24.5,
-            outline_colour,
-            0,
-        );
-        (p.draw_text)(
-            &state.message.text,
-            (
-                message_location.0 - 1.0 / 512.0,
-                message_location.1 - 1.0 / 512.0,
-            ),
-            1.0,
-            24.5,
-            outline_colour,
-            0,
-        );
-        (p.draw_text)(
-            &state.message.text,
-            (
-                message_location.0 + 1.0 / 512.0,
-                message_location.1 + 1.0 / 512.0,
-            ),
-            1.0,
-            24.5,
-            outline_colour,
-            0,
-        );
-
-
-        (p.draw_text)(
+        draw_outlined_text(
+            p,
             &state.message.text,
             message_location,
             1.0,
             24.0,
             middle_colour,
-            0,
+            outline_colour,
         );
 
         state.message.timeout = state.message.timeout.saturating_sub(16);
@@ -2053,6 +2072,65 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     false
 }
+
+//a cheesy way to do an outline
+fn draw_outlined_text(
+    p: &Platform,
+    text: &str,
+    location: (f32, f32),
+    screen_width_percentage: f32,
+    scale: f32,
+    middle_colour: [f32; 4],
+    outline_colour: [f32; 4],
+) {
+    //let's just lineraly extrapolate from what worked before!
+    let outline_scale = scale * 24.5 / 24.0;
+    let outline_offset = 1.0 / (512.0 * 24.0);
+
+    (p.draw_text)(
+        text,
+        (location.0 + 1.0 / 512.0, location.1 - 1.0 / 512.0),
+        screen_width_percentage,
+        outline_scale,
+        outline_colour,
+        0,
+    );
+    (p.draw_text)(
+        text,
+        (location.0 - 1.0 / 512.0, location.1 + 1.0 / 512.0),
+        screen_width_percentage,
+        outline_scale,
+        outline_colour,
+        0,
+    );
+    (p.draw_text)(
+        text,
+        (location.0 - 1.0 / 512.0, location.1 - 1.0 / 512.0),
+        screen_width_percentage,
+        outline_scale,
+        outline_colour,
+        0,
+    );
+    (p.draw_text)(
+        text,
+        (location.0 + 1.0 / 512.0, location.1 + 1.0 / 512.0),
+        screen_width_percentage,
+        outline_scale,
+        outline_colour,
+        0,
+    );
+
+
+    (p.draw_text)(
+        text,
+        location,
+        screen_width_percentage,
+        scale,
+        middle_colour,
+        0,
+    );
+}
+
 
 const HUD_LINE: f32 = 0.675;
 const WARNING_TIMEOUT: u32 = 2500;
@@ -2462,6 +2540,186 @@ fn draw_piece(
         piece_texture_spec,
         0,
     );
+}
+
+fn single_controller(stashes: &Stashes, board: &Board, block: Block) -> Option<Participant> {
+    if let Some(pieces_array) = block_to_pieces(board, block) {
+        let mut participant_iter = pieces_array
+            .iter()
+            .map(|pieces| controller(stashes, pieces));
+
+        let possible_particpants: [Option<Participant>; 3] = [
+            participant_iter.next().and_then(id),
+            participant_iter.next().and_then(id),
+            participant_iter.next().and_then(id),
+        ];
+
+        match (
+            possible_particpants[0],
+            possible_particpants[1],
+            possible_particpants[2],
+        ) {
+            (Some(p1), Some(p2), Some(p3)) if p1 == p2 && p2 == p3 => Some(p1),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+fn controller(stashes: &Stashes, pieces: &SpacePieces) -> Option<Participant> {
+    let mut possible_colour = None;
+
+    for piece in pieces.into_iter() {
+        if let Some(colour) = possible_colour {
+            if colour != piece.colour {
+                return None;
+            }
+        } else {
+            possible_colour = Some(piece.colour);
+        }
+    }
+
+    possible_colour.and_then(|colour| if stashes.player_stash.colour == colour {
+        Some(Player)
+    } else {
+        for i in 0..stashes.cpu_stashes.len() {
+            if stashes.cpu_stashes[i].colour == colour {
+                return Some(Cpu(i));
+            }
+        }
+
+        None
+    })
+}
+
+#[derive(Clone, Copy)]
+enum Block {
+    Horizontal(i8, (i8, i8, i8)),
+    Vertical(i8, (i8, i8, i8)),
+    UpRight(i8, i8),
+    UpLeft(i8, i8),
+    DownLeft(i8, i8),
+    DownRight(i8, i8),
+}
+use Block::*;
+
+fn power_blocks(board: &Board) -> Vec<Block> {
+    let mut result = Vec::new();
+
+    for &(x, y) in board.keys() {
+        let horizontal = Horizontal(y, (x - 1, x, x + 1));
+
+        if is_power_block(board, horizontal) {
+            result.push(horizontal);
+        }
+
+        let vertical = Vertical(x, (y - 1, y, y + 1));
+
+        if is_power_block(board, vertical) {
+            result.push(vertical);
+        }
+
+        let up_right = UpRight(x, y);
+
+        if is_power_block(board, up_right) {
+            result.push(up_right);
+        }
+
+        let up_left = UpLeft(x, y);
+
+        if is_power_block(board, up_left) {
+            result.push(up_left);
+        }
+
+        let down_right = DownRight(x, y);
+
+        if is_power_block(board, down_right) {
+            result.push(down_right);
+        }
+
+        let down_left = DownLeft(x, y);
+
+        if is_power_block(board, down_left) {
+            result.push(down_left);
+        }
+
+    }
+
+    result
+}
+
+fn block_to_coords(block: Block) -> [(i8, i8); 3] {
+    match block {
+        Horizontal(x, (y_minus_1, y, y_plus_1)) => [(x, y_minus_1), (x, y), (x, y_plus_1)],
+        Vertical(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
+        UpRight(x, y) => [(x, y + 1), (x, y), (x + 1, y)],
+        UpLeft(x, y) => [(x, y + 1), (x, y), (x - 1, y)],
+        DownLeft(x, y) => [(x, y - 1), (x, y), (x - 1, y)],
+        DownRight(x, y) => [(x, y - 1), (x, y), (x + 1, y)],
+    }
+}
+
+/// The identity function.
+fn id<T>(x: T) -> T {
+    x
+}
+
+fn block_to_cards(board: &Board, block: Block) -> Option<[Card; 3]> {
+    let coords = block_to_coords(block);
+    let mut cards_iter = coords.iter().map(|key| board.get(key).map(|s| s.card));
+    let possible_cards: [Option<Card>; 3] = [
+        cards_iter.next().and_then(id),
+        cards_iter.next().and_then(id),
+        cards_iter.next().and_then(id),
+    ];
+
+    match (possible_cards[0], possible_cards[1], possible_cards[2]) {
+        (Some(c1), Some(c2), Some(c3)) => Some([c1, c2, c3]),
+        _ => None,
+    }
+}
+
+fn block_to_pieces(board: &Board, block: Block) -> Option<[SpacePieces; 3]> {
+    let coords = block_to_coords(block);
+    let mut coords_iter = coords
+        .iter()
+        .map(|key| board.get(key).map(|s| (*s).pieces.clone()));
+
+    let possible_pieces: [Option<SpacePieces>; 3] = [
+        coords_iter.next().and_then(id),
+        coords_iter.next().and_then(id),
+        coords_iter.next().and_then(id),
+    ];
+
+    match (possible_pieces[0], possible_pieces[1], possible_pieces[2]) {
+        (Some(p1), Some(p2), Some(p3)) => Some([p1, p2, p3]),
+        _ => None,
+    }
+}
+
+fn is_power_block(board: &Board, block: Block) -> bool {
+    if let Some(mut cards) = block_to_cards(board, block) {
+        cards.sort();
+
+        match (cards[0], cards[1], cards[2]) {
+            (Card { suit: s1, .. }, Card { suit: s2, .. }, Card { suit: s3, .. })
+                if s1 == s2 && s2 == s3 =>
+            {
+                true
+            }
+            (Card { value: v1, .. }, Card { value: v2, .. }, Card { value: v3, .. })
+                if v1.is_number() && v2.is_number() && v3.is_number() =>
+            {
+                f32::from(v1) + 1.0 == f32::from(v2) && f32::from(v2) + 1.0 == f32::from(v3)
+            }
+            _ => false,
+        }
+
+    } else {
+        false
+    }
+
 }
 
 fn draw_card(p: &Platform, card_matrix: [f32; 16], texture_spec: TextureSpec) {

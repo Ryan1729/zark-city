@@ -89,7 +89,7 @@ pub enum Turn {
     Hatch,
     HatchSelect(Card, usize),
     CpuTurn,
-    Over(PieceColour),
+    Over(Participant, Option<Participant>),
 }
 
 pub enum Highlighted {
@@ -617,7 +617,7 @@ impl PartialOrd for Pips {
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Card {
     pub suit: Suit,
     pub value: Value,
@@ -708,7 +708,7 @@ impl Card {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -749,7 +749,19 @@ impl From<Suit> for f32 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+impl Ord for Suit {
+    fn cmp(&self, other: &Suit) -> Ordering {
+        (f32::from(*self) as u8).cmp(&(f32::from(*other) as u8))
+    }
+}
+
+impl PartialOrd for Suit {
+    fn partial_cmp(&self, other: &Suit) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Value {
     Ace,
     Two,
@@ -852,6 +864,18 @@ impl From<Value> for f32 {
             Queen => 11.0,
             King => 12.0,
         }
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Value) -> Ordering {
+        (f32::from(*self) as u8).cmp(&(f32::from(*other) as u8))
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Value) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -1228,6 +1252,50 @@ pub fn get_all_diagonally_connected_empty_spaces(board: &Board) -> HashSet<(i8, 
     }
 
     result
+}
+
+#[cfg(test)]
+mod card_tests {
+    use ::*;
+
+    #[test]
+    fn sort_by_suit_then_value() {
+        let mut cards = vec![
+            Card {
+                suit: Hearts,
+                value: Two,
+            },
+            Card {
+                suit: Clubs,
+                value: Three,
+            },
+            Card {
+                suit: Clubs,
+                value: Two,
+            },
+        ];
+
+        cards.sort();
+
+        assert_eq!(
+            cards,
+            vec![
+                Card {
+                    suit: Clubs,
+                    value: Two,
+                },
+                Card {
+                    suit: Clubs,
+                    value: Three,
+                },
+                Card {
+                    suit: Hearts,
+                    value: Two,
+                },
+            ]
+        )
+
+    }
 }
 
 #[cfg(test)]

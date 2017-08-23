@@ -6,8 +6,12 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 
 # TODO
 * gameplay
-  * implement turn options for Cpu players
-    * extract procedures from player version
+  * check if game is won
   * highlighting
-    make sure cards/pieces are higlighted iff they are relevant
+    * make sure cards/pieces are higlighted iff they are relevant
+    * highlight power blocks
+  * text
+    * Add instructional messages where appropriate
+      * Fly is a good example
+  * better Cpu "AI"
 * add option to use jokers
