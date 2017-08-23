@@ -2628,7 +2628,7 @@ fn controller(stashes: &Stashes, pieces: &SpacePieces) -> Option<Participant> {
     })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Block {
     Horizontal(i8, (i8, i8, i8)),
     Vertical(i8, (i8, i8, i8)),
@@ -2686,8 +2686,8 @@ fn power_blocks(board: &Board) -> Vec<Block> {
 
 fn block_to_coords(block: Block) -> [(i8, i8); 3] {
     match block {
-        Horizontal(x, (y_minus_1, y, y_plus_1)) => [(x, y_minus_1), (x, y), (x, y_plus_1)],
-        Vertical(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
+        Horizontal(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
+        Vertical(x, (y_minus_1, y, y_plus_1)) => [(x, y_minus_1), (x, y), (x, y_plus_1)],
         UpRight(x, y) => [(x, y + 1), (x, y), (x + 1, y)],
         UpLeft(x, y) => [(x, y + 1), (x, y), (x - 1, y)],
         DownLeft(x, y) => [(x, y - 1), (x, y), (x - 1, y)],
