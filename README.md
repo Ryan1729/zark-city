@@ -6,10 +6,10 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 
 # TODO
 * gameplay
-  * check if game is won
   * highlighting
     * make sure cards/pieces are higlighted iff they are relevant
     * highlight power blocks
+      * chromatic abberation?
   * text
     * Add instructional messages where appropriate
       * Fly is a good example

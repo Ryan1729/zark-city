@@ -2093,14 +2093,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     }
 
     match state.turn {
-        BuildSelect(_, _) |
-        MoveSelect(_, _, _) |
-        FlySelectCarpet(_, _) |
-        FlySelect(_, _, _, _) |
-        HatchSelect(_, _) => {}
-        _ => if escape_pressed {
+        DrawUntilNumberCard |
+        FirstRound(_, _) |
+        DrawInitialCard |
+        SelectTurnOption |
+        Discard |
+        CpuTurn |
+        Over(_, _) => if escape_pressed {
             return true;
         },
+        _ => {}
     };
 
     false
