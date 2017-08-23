@@ -1017,6 +1017,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.player_hand.insert(old_index, held_card);
 
                 state.turn = SelectTurnOption;
+            } else if build_targets.len() == 0 {
+                state.message = Message {
+                    text: "You can't Build because you don't occupy a space on the edge!"
+                        .to_owned(),
+                    timeout: WARNING_TIMEOUT,
+                };
+
+                state.player_hand.insert(old_index, held_card);
+
+                state.turn = SelectTurnOption;
             }
         }
         Move => if let SelectPiece(space_coords, piece_index) = action {
