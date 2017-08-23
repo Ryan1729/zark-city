@@ -88,6 +88,7 @@ pub enum Turn {
     FlySelect((i8, i8), Space, Card, usize),
     Hatch,
     HatchSelect(Card, usize),
+    Discard,
     CpuTurn,
     Over(Participant, Option<Participant>),
 }

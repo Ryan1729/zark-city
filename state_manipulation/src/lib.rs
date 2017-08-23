@@ -941,7 +941,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let Some(card) = deal(state) {
                 state.player_hand.push(card);
             }
-            state.turn = CpuTurn;
+            state.turn = Discard;
         }
         Grow => if let SelectPiece(space_coords, piece_index) = action {
             match grow_if_available(
@@ -951,7 +951,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 &mut state.stashes.player_stash,
             ) {
                 Ok(true) => {
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
                 Ok(false) => {}
                 Err(message) => {
@@ -964,7 +964,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         Spawn => if let SelectSpace(key) = action {
             match spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
                 Ok(true) => {
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
                 Ok(false) => {}
                 Err(message) => {
@@ -1011,7 +1011,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
@@ -1086,7 +1086,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
 
 
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 if let Occupied(mut entry) = state.board.entry(space_coords) {
@@ -1260,7 +1260,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
                     card_index_3.map(|i| hand.remove(i));
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 };
 
             };
@@ -1277,61 +1277,65 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         }
         ConvertSelect(space_coords, piece_index, card_index_1, card_index_2, card_index_3) => {
-            let stash_colour = state.stashes.player_stash.colour;
+            if let Some(space) = state.board.get_mut(&space_coords) {
 
-            let (has_one, has_two, has_three) = {
-                let stash = &state.stashes[stash_colour];
+                if let Some(piece) = space.pieces.get_mut(piece_index) {
+                    let stash_colour = state.stashes.player_stash.colour;
 
-                (
-                    stash[Pips::One] != NoneLeft,
-                    stash[Pips::Two] != NoneLeft,
-                    stash[Pips::Three] != NoneLeft,
-                )
-            };
+                    let (has_one, has_two, has_three) = {
+                        let stash = &state.stashes[stash_colour];
 
-            let mut selected_pips = None;
+                        (
+                            stash[Pips::One] != NoneLeft,
+                            stash[Pips::Two] != NoneLeft,
+                            stash[Pips::Three] != NoneLeft,
+                        )
+                    };
 
-            if has_one &&
-                turn_options_button(
-                    p,
-                    &mut state.ui_context,
-                    "Small",
-                    (-2.0 / 3.0, 0.875),
-                    700,
-                    (mouse_x, mouse_y),
-                    mouse_button_state,
-                ) {
-                selected_pips = Some(Pips::One);
-            }
-            if has_two &&
-                turn_options_button(
-                    p,
-                    &mut state.ui_context,
-                    "Medium",
-                    (0.0, 0.875),
-                    701,
-                    (mouse_x, mouse_y),
-                    mouse_button_state,
-                ) {
-                selected_pips = Some(Pips::Two);
-            }
-            if has_three &&
-                turn_options_button(
-                    p,
-                    &mut state.ui_context,
-                    "Large",
-                    (2.0 / 3.0, 0.875),
-                    702,
-                    (mouse_x, mouse_y),
-                    mouse_button_state,
-                ) {
-                selected_pips = Some(Pips::Three);
-            }
+                    let mut selected_pips = None;
 
-            if let Some(pips) = selected_pips {
-                if let Some(space) = state.board.get_mut(&space_coords) {
+                    if has_one && piece.pips == Pips::One {
+                        selected_pips = Some(Pips::One);
+                    }
 
-                    if let Some(piece) = space.pieces.get_mut(piece_index) {
+                    if has_one && piece.pips > Pips::One &&
+                        turn_options_button(
+                            p,
+                            &mut state.ui_context,
+                            "Small",
+                            (-2.0 / 3.0, 0.875),
+                            700,
+                            (mouse_x, mouse_y),
+                            mouse_button_state,
+                        ) {
+                        selected_pips = Some(Pips::One);
+                    }
+                    if has_two && piece.pips >= Pips::Two &&
+                        turn_options_button(
+                            p,
+                            &mut state.ui_context,
+                            "Medium",
+                            (0.0, 0.875),
+                            701,
+                            (mouse_x, mouse_y),
+                            mouse_button_state,
+                        ) {
+                        selected_pips = Some(Pips::Two);
+                    }
+                    if has_three && piece.pips >= Pips::Three &&
+                        turn_options_button(
+                            p,
+                            &mut state.ui_context,
+                            "Large",
+                            (2.0 / 3.0, 0.875),
+                            702,
+                            (mouse_x, mouse_y),
+                            mouse_button_state,
+                        ) {
+                        selected_pips = Some(Pips::Three);
+                    }
+
+                    if let Some(pips) = selected_pips {
 
                         if pips <= piece.pips {
                             if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
@@ -1344,7 +1348,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 card_index_2.map(|i| hand.remove(i));
                                 card_index_3.map(|i| hand.remove(i));
 
-                                state.turn = CpuTurn;
+                                state.turn = Discard;
                             }
 
                         }
@@ -1457,7 +1461,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 if fly_from_targets.contains(&key) {
                     state.board.insert(key, space);
 
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.board.insert(old_coords, space);
@@ -1523,7 +1527,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         },
                     );
 
-                    state.turn = CpuTurn;
+                    state.turn = Discard;
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.player_hand.insert(old_index, held_card);
@@ -1531,6 +1535,22 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = SelectTurnOption;
             }
         }
+        Discard => {
+            if state.player_hand.len() > 6 {
+                if let SelectCardFromHand(index) = action {
+                    state.pile.push(state.player_hand.remove(index));
+                } else {
+                    state.message = Message {
+                        text: "Discard down to six cards".to_owned(),
+                        timeout: 1000,
+                    };
+                }
+            } else {
+                state.turn = CpuTurn;
+            };
+
+        }
+
         CpuTurn => {
             let cpu_player_count = cpu_player_count(state);
             let mut current_participant = next_participant(cpu_player_count, Player);
@@ -1634,11 +1654,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         3 => {
                             //Build
-                            let number_cards: Vec<_> = hand.iter()
+                            let mut number_cards: Vec<_> = hand.iter()
                                 .enumerate()
                                 .filter(|&(_, c)| c.is_number())
                                 .map(|(i, _)| i)
                                 .collect();
+                            //the cpu's choices should be a function of the rng
+                            number_cards.sort();
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
 
@@ -2878,6 +2900,7 @@ fn draw_hud(
                 !card.is_number() && selected_index == Some(i)
             }
             Fly => card.value == Ace && selected_index == Some(i),
+            Discard => selected_index == Some(i),
             _ => false,
         };
 
