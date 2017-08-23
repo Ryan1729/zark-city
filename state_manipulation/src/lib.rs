@@ -1247,15 +1247,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         card_index_2,
                         card_index_3,
                     );
-                } else if turn_options_button(
-                    p,
-                    &mut state.ui_context,
-                    "Demolish",
-                    (0.25, 0.875),
-                    701,
-                    (mouse_x, mouse_y),
-                    mouse_button_state,
-                ) {
+                } else if !can_convert ||
+                    turn_options_button(
+                        p,
+                        &mut state.ui_context,
+                        "Demolish",
+                        (0.25, 0.875),
+                        701,
+                        (mouse_x, mouse_y),
+                        mouse_button_state,
+                    ) {
                     space.pieces.remove(piece_index);
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
