@@ -1,5 +1,5 @@
-extern crate rand;
 extern crate common;
+extern crate rand;
 
 use common::*;
 use common::Projection::*;
@@ -63,7 +63,6 @@ fn deal_parts(deck: &mut Vec<Card>, pile: &mut Vec<Card>, rng: &mut StdRng) -> O
 }
 
 fn make_state(mut rng: StdRng) -> State {
-
     let mut deck = Card::all_values();
 
     rng.shuffle(deck.as_mut_slice());
@@ -476,7 +475,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
 
             if pieces.len() > (space_offset * PIECES_PER_PAGE) as _ {
-
                 let on_forward = on_card &&
                     point_in_square_on_card(
                         (card_mouse_x, card_mouse_y),
@@ -547,7 +545,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 if backward_button_outcome.clicked {
                     action = PageBack(*grid_coords);
-
                 } else {
                     match backward_button_outcome.draw_state {
                         Pressed => {
@@ -676,7 +673,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
                     (Some(winner), None) => (Some(winner), Some(controller)),
                     (None, Some(mistake)) => (None, Some(mistake)),
-
                 };
             }
         }
@@ -688,7 +684,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             } else {
                 Over(winner, winners.1)
             };
-
         }
     }
 
@@ -711,7 +706,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let DrawUntilNumberCard = state.turn {
                 state.turn = WhoStarts;
             }
-
         }
         RevealHand(participant) => {
             {
@@ -749,10 +743,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     let card_matrix = mat4x4_mul(&hand_camera_matrix, &view);
 
                     draw_card(p, card_matrix, card.texture_spec());
-
                 }
-
-
             }
 
 
@@ -830,7 +821,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         FirstRound(starter_cards, mut current_participant) => {
             loop {
                 match current_participant {
-
                     Player => {
                         state.turn = FirstRoundPlayer(starter_cards);
                         break;
@@ -855,7 +845,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             if space_and_piece_available {
                                 if let Some(card) = starter_cards.cpu_cards[i] {
-
                                     let mut space = Space::new(card);
 
                                     if let Some(piece) = stash.remove(Pips::One) {
@@ -864,9 +853,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     state.board.insert(*key, space);
                                 }
                             }
-
                         }
-
                     }
                 }
 
@@ -1040,7 +1027,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = SelectTurnOption;
         },
         MoveSelect(space_coords, piece_index, piece) => {
-
             draw_piece(
                 p,
                 view,
@@ -1077,7 +1063,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 let valid_targets = get_valid_move_targets(&state.board, space_coords);
 
                 if valid_targets.contains(&key) {
-
                     if let Occupied(mut entry) = state.board.entry(key) {
                         let mut space = entry.get_mut();
 
@@ -1112,7 +1097,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         ) => {
             if let Some(space) = state.board.get(&space_coords) {
                 if let Some(piece) = space.pieces.get(piece_index) {
-
                     let pips_needed = u8::from(piece.pips);
 
                     let hand = &state.player_hand;
@@ -1177,7 +1161,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     space_coords,
                                     piece_index,
                                     card_index_1,
-
                                     Some(index),
                                     None,
                                 ),
@@ -1189,14 +1172,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     None,
                                 ),
                             }
-
                         } else {
                             state.turn
                         }
                     };
-
                 }
-
             };
 
             if right_mouse_pressed || escape_pressed {
@@ -1205,7 +1185,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     _ => ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None),
                 };
             }
-
         }
         ConvertSlashDemolishWhich(
             space_coords,
@@ -1219,7 +1198,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let hand = &mut state.player_hand;
             let stash = &mut state.stashes.player_stash;
             if let Some(space) = state.board.get_mut(&space_coords) {
-
                 let can_convert = if let Some(piece) = space.pieces.get(piece_index) {
                     match piece.pips {
                         Pips::One => stash[Pips::One] != NoneLeft,
@@ -1277,7 +1255,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                     state.turn = Discard;
                 };
-
             };
 
             if right_mouse_pressed || escape_pressed {
@@ -1290,7 +1267,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     cards_owed,
                 );
             }
-
         }
         ConvertSelect(
             space_coords,
@@ -1300,7 +1276,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             card_index_3,
             cards_owed,
         ) => if let Some(space) = state.board.get_mut(&space_coords) {
-
             if let Some(piece) = space.pieces.get_mut(piece_index) {
                 let stash_colour = state.stashes.player_stash.colour;
 
@@ -1358,7 +1333,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
 
                 if let Some(pips) = selected_pips {
-
                     if pips <= piece.pips {
                         if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
                             state.stashes[piece.colour].add(*piece);
@@ -1380,7 +1354,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             state.turn = Discard;
                         }
-
                     }
                 }
             }
@@ -1507,7 +1480,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 let no_pieces_on_board = state.stashes.player_stash.is_full();
 
                 if no_pieces_on_board {
-
                     let valid_target = if let Some(card) = state.player_hand.get(index) {
                         card.is_number()
                     } else {
@@ -1576,7 +1548,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             } else {
                 state.turn = CpuTurn;
             };
-
         }
 
         CpuTurn => {
@@ -1616,7 +1587,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //Grow
 
                             let chosen_piece = {
-
                                 let mut occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour)
                                         .into_iter()
@@ -1624,12 +1594,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 //the cpu's choices should be a function of the rng
                                 occupied_spaces.sort();
 
-                                if let Some(space_coords) =
-                                    rng.choose(&occupied_spaces).map(|&i| i)
+                                if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
                                 {
                                     let possible_piece_index =
                                         state.board.get(&space_coords).and_then(|space| {
-
                                             let own_pieces = space
                                                 .pieces
                                                 .filtered_indicies(|p| p.colour == colour);
@@ -1644,7 +1612,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             };
 
                             if let Some((space_coords, piece_index)) = chosen_piece {
-
                                 match grow_if_available(
                                     space_coords,
                                     piece_index,
@@ -1691,7 +1658,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             number_cards.sort();
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
-
                                 let build_targets: Vec<_> =
                                     get_all_build_targets(&state.board, colour)
                                         .into_iter()
@@ -1714,7 +1680,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         4 => {
                             //Move
                             let chosen_piece = {
-
                                 let mut occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour)
                                         .into_iter()
@@ -1722,12 +1687,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 //the cpu's choices should be a function of the rng
                                 occupied_spaces.sort();
 
-                                if let Some(space_coords) =
-                                    rng.choose(&occupied_spaces).map(|&i| i)
+                                if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
                                 {
                                     let possible_piece_index =
                                         state.board.get(&space_coords).and_then(|space| {
-
                                             let own_pieces = space
                                                 .pieces
                                                 .filtered_indicies(|p| p.colour == colour);
@@ -1750,7 +1713,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 if let Some(target_space_coords) =
                                     rng.choose(&valid_targets).map(|&i| i)
                                 {
-
                                     let possible_piece = if let Occupied(mut source_entry) =
                                         state.board.entry(space_coords)
                                     {
@@ -1781,7 +1743,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //TODO does it ever make sense to convert or demolish your own piece?
 
                             let chosen_enemy_piece = {
-
                                 let mut spaces: Vec<_> = state.board.keys().cloned().collect();
                                 //the cpu's choices should be a function of the rng
                                 spaces.sort();
@@ -1810,12 +1771,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some((space_coords, piece_index)) = chosen_enemy_piece {
                                 if let Some(space) = state.board.get_mut(&space_coords) {
                                     if let Some(piece) = space.pieces.get(piece_index).clone() {
-
                                         let pips_needed = u8::from(piece.pips);
 
                                         let selections = {
-
-
                                             //TODO we might want to save particular cards to make a
                                             // power block etc.
                                             let mut card_choices :Vec<_> = hand.iter()
@@ -1831,7 +1789,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                             let mut pips_selected = 0;
                                             let mut smallest_card_value = 255;
                                             while let Some((index, card)) = card_choices.pop() {
-
                                                 selected_indicies.push(index);
                                                 pips_selected += pip_value(card);
                                                 smallest_card_value = std::cmp::min(
@@ -1847,7 +1804,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                             if pips_selected >= pips_needed &&
                                                 smallest_card_value > pips_selected - pips_needed
                                             {
-
                                                 let can_convert = match piece.pips {
                                                     Pips::One => {
                                                         stashes[colour][Pips::One] != NoneLeft
@@ -1884,7 +1840,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 for &pips in
                                                     vec![Pips::Three, Pips::Two, Pips::One].iter()
                                                 {
-
                                                     if pips <= piece.pips {
                                                         if let Some(stash_piece) =
                                                             stashes[colour].remove(pips)
@@ -1901,24 +1856,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                 }
 
                                                                 for _ in 0..cards_owed {
-                                                                    if let Some(card) =
-                                                                        deal_parts(
-                                                                            &mut state.deck,
-                                                                            &mut state.pile,
-                                                                            rng,
-                                                                        ) {
+                                                                    if let Some(card) = deal_parts(
+                                                                        &mut state.deck,
+                                                                        &mut state.pile,
+                                                                        rng,
+                                                                    ) {
                                                                         hand.push(card);
                                                                     }
                                                                 }
 
                                                                 break 'turn;
                                                             }
-
                                                         }
-
                                                     }
-
-
                                                 }
                                             }
 
@@ -1944,7 +1894,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                             _ => {}
                                         };
                                     }
-
                                 };
                             };
                         }
@@ -1975,7 +1924,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 rng.choose(&spaces).and_then(
                                     |key| if is_space_movable(board, key) {
                                         board.remove(key).map(|space| (*key, space))
-
                                     } else {
                                         None
                                     },
@@ -2043,7 +1991,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         );
 
                                         break 'turn;
-
                                     }
                                 }
                             }
@@ -2424,7 +2371,6 @@ fn grow_if_available(
                 match piece.pips {
                     Pips::One | Pips::Two => {
                         if let Some(larger_piece) = stash.remove(piece.pips.higher()) {
-
                             let temp = piece.clone();
                             *piece = larger_piece;
                             stash.add(temp);
@@ -2732,7 +2678,6 @@ fn power_blocks(board: &Board) -> Vec<Block> {
         if is_power_block(board, down_left) {
             result.push(down_left);
         }
-
     }
 
     result
@@ -2804,11 +2749,9 @@ fn is_power_block(board: &Board, block: Block) -> bool {
             }
             _ => false,
         }
-
     } else {
         false
     }
-
 }
 
 fn draw_card(p: &Platform, card_matrix: [f32; 16], texture_spec: TextureSpec) {
@@ -3068,7 +3011,6 @@ fn draw_stash(p: &Platform, matrix: [f32; 16], stash: &Stash, layer: usize) {
             );
         }
     }
-
 }
 
 #[derive(Copy, Clone, Debug)]
