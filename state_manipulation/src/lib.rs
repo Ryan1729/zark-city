@@ -918,6 +918,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         SelectTurnOption => {
             state.highlighted = NoHighlighting;
+            state.message.timeout = 0;
         }
         DrawThree => {
             //TODO drawing sound effect or other indication?
@@ -1157,6 +1158,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             pips_selected - pips_needed,
                         )
                     } else {
+                        if smallest_card_value <= pips_selected - pips_needed {
+                            state.message = Message {
+                                text: "You cannot discard redundant face cards to get extra draws"
+                                    .to_owned(),
+                                timeout: WARNING_TIMEOUT,
+                            }
+                        }
                         if let SelectCardFromHand(index) = action {
                             //TODO better way to signal when there are too many cards?
                             match (
