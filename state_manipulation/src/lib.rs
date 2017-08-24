@@ -2804,13 +2804,13 @@ fn is_power_block(board: &Board, block: Block) -> bool {
         cards.sort();
 
         match (cards[0], cards[1], cards[2]) {
-            (Card { suit: s1, .. }, Card { suit: s2, .. }, Card { suit: s3, .. })
-                if s1 == s2 && s2 == s3 =>
+            (Card { value: v1, .. }, Card { value: v2, .. }, Card { value: v3, .. })
+                if v1.is_number() && v2.is_number() && v3.is_number() && v1 == v2 && v2 == v3 =>
             {
                 true
             }
-            (Card { value: v1, .. }, Card { value: v2, .. }, Card { value: v3, .. })
-                if v1.is_number() && v2.is_number() && v3.is_number() =>
+            (Card { value: v1, suit: s1 }, Card { value: v2, suit: s2 }, Card { value: v3, suit: s3 })
+                if v1.is_number() && v2.is_number() && v3.is_number()  && s1 == s2 && s2 == s3 =>
             {
                 f32::from(v1) + 1.0 == f32::from(v2) && f32::from(v2) + 1.0 == f32::from(v3)
             }
