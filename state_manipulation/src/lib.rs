@@ -114,7 +114,7 @@ fn make_state(mut rng: StdRng) -> State {
         cpu_stashes.push(Stash::full(colour_deck.pop().unwrap()));
     }
 
-    let mut state = State {
+    let state = State {
         rng,
         cam_x: 0.0,
         cam_y: 0.0,
@@ -162,7 +162,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let mut mouse_released = false;
 
     let mut right_mouse_pressed = false;
-    let mut right_mouse_released = false;
+    //let mut right_mouse_released = false;
 
     let mut escape_pressed = false;
 
@@ -240,7 +240,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 right_mouse_pressed = true;
             }
             Event::RightMouseUp => {
-                right_mouse_released = true;
+                //right_mouse_released = true;
             }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
@@ -670,7 +670,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 winners = match winners {
                     (None, None) => (Some(controller), None),
                     (Some(winner), _) | (_, Some(winner)) if winner == controller => winners,
-                    (Some(winner), Some(second_winner)) => {
+                    (Some(_), Some(second_winner)) => {
                         debug_assert!(second_winner == controller, "Three winners?!");
                         winners
                     }
@@ -1523,8 +1523,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         HatchSelect(held_card, old_index) => {
-            let hatch_targets =
-                get_all_hatch_targets(&state.board, state.stashes.player_stash.colour);
+            let hatch_targets = get_all_hatch_targets(&state.board);
 
             let target_space_coords = place_card(
                 p,
@@ -2016,7 +2015,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     println!("Some(&card_index)");
                                     let hatch_targets: Vec<
                                         (i8, i8),
-                                    > = get_all_hatch_targets(&state.board, colour)
+                                    > = get_all_hatch_targets(&state.board)
                                         .iter()
                                         .cloned()
                                         .collect();
@@ -2179,7 +2178,7 @@ fn draw_outlined_text(
 
     (p.draw_text)(
         text,
-        (location.0 + 1.0 / 512.0, location.1 - 1.0 / 512.0),
+        (location.0 + outline_offset, location.1 - outline_offset),
         screen_width_percentage,
         outline_scale,
         outline_colour,
@@ -2187,7 +2186,7 @@ fn draw_outlined_text(
     );
     (p.draw_text)(
         text,
-        (location.0 - 1.0 / 512.0, location.1 + 1.0 / 512.0),
+        (location.0 - outline_offset, location.1 + outline_offset),
         screen_width_percentage,
         outline_scale,
         outline_colour,
@@ -2195,7 +2194,7 @@ fn draw_outlined_text(
     );
     (p.draw_text)(
         text,
-        (location.0 - 1.0 / 512.0, location.1 - 1.0 / 512.0),
+        (location.0 - outline_offset, location.1 - outline_offset),
         screen_width_percentage,
         outline_scale,
         outline_colour,
@@ -2203,7 +2202,7 @@ fn draw_outlined_text(
     );
     (p.draw_text)(
         text,
-        (location.0 + 1.0 / 512.0, location.1 + 1.0 / 512.0),
+        (location.0 + outline_offset, location.1 + outline_offset),
         screen_width_percentage,
         outline_scale,
         outline_colour,
@@ -2572,7 +2571,7 @@ fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)
     result
 }
 
-fn get_all_hatch_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+fn get_all_hatch_targets(board: &Board) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
     for &(x, y) in board.keys() {
@@ -3018,49 +3017,6 @@ fn draw_hud(
 
     draw_stash(p, stash_matrix, &state.stashes.player_stash, layer);
 
-    if false {
-        let mouse_camera_matrix = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            mouse_x * (right - left),
-            mouse_y * (top - bottom),
-            0.0,
-            1.0,
-        ];
-
-        let mouse_matrix = mat4x4_mul(&mouse_camera_matrix, &hud_view);
-        // let mouse_matrix = mouse_camera_matrix;
-
-        let piece_colour = PieceColour::Blue;
-
-        let colour_offset = f32::from(piece_colour);
-        let texture_index = i32::from(piece_colour);
-
-        let texture_spec = (
-            3.0 * CARD_TEXTURE_WIDTH,
-            4.0 * CARD_TEXTURE_HEIGHT + (colour_offset * TOOLTIP_TEXTURE_HEIGHT_OFFSET),
-            TOOLTIP_TEXTURE_WIDTH,
-            TOOLTIP_TEXTURE_HEIGHT,
-            0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        );
-
-        (p.draw_textured_poly_with_matrix)(mouse_matrix, 2, texture_spec, layer);
-    }
-
     result
 }
 
@@ -3197,9 +3153,6 @@ fn button_logic(context: &mut UIContext, button: Button) -> ButtonOutcome {
 fn center(x: f32) -> f32 {
     x * 2.0 - 1.0
 }
-
-//TODO: Is there a way to query for this rather than using this guess?
-const MOUSE_POINTER_SIZE: f32 = 16.0;
 
 const LARGEST_PIECE_TEXTURE_SIZE: f32 = 65.0 / T_S;
 
