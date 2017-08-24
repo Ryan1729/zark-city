@@ -1155,6 +1155,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             card_index_1,
                             card_index_2,
                             card_index_3,
+                            pips_selected - pips_needed,
                         )
                     } else {
                         if let SelectCardFromHand(index) = action {
@@ -1212,7 +1213,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             card_index_1,
             card_index_2,
             card_index_3,
+            cards_owed,
         ) => {
+            debug_assert!(cards_owed <= 2);
             let hand = &mut state.player_hand;
             let stash = &mut state.stashes.player_stash;
             if let Some(space) = state.board.get_mut(&space_coords) {
@@ -1246,6 +1249,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         card_index_1,
                         card_index_2,
                         card_index_3,
+                        cards_owed,
                     );
                 } else if !can_convert ||
                     turn_options_button(
@@ -1258,9 +1262,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         mouse_button_state,
                     ) {
                     space.pieces.remove(piece_index);
+
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
                     card_index_3.map(|i| hand.remove(i));
+
+                    for _ in 0..cards_owed {
+                        if let Some(card) =
+                            deal_parts(&mut state.deck, &mut state.pile, &mut state.rng)
+                        {
+                            hand.push(card);
+                        }
+                    }
+
                     state.turn = Discard;
                 };
 
@@ -1273,90 +1287,104 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     card_index_1,
                     card_index_2,
                     card_index_3,
+                    cards_owed,
                 );
             }
 
         }
-        ConvertSelect(space_coords, piece_index, card_index_1, card_index_2, card_index_3) => {
-            if let Some(space) = state.board.get_mut(&space_coords) {
+        ConvertSelect(
+            space_coords,
+            piece_index,
+            card_index_1,
+            card_index_2,
+            card_index_3,
+            cards_owed,
+        ) => if let Some(space) = state.board.get_mut(&space_coords) {
 
-                if let Some(piece) = space.pieces.get_mut(piece_index) {
-                    let stash_colour = state.stashes.player_stash.colour;
+            if let Some(piece) = space.pieces.get_mut(piece_index) {
+                let stash_colour = state.stashes.player_stash.colour;
 
-                    let (has_one, has_two, has_three) = {
-                        let stash = &state.stashes[stash_colour];
+                let (has_one, has_two, has_three) = {
+                    let stash = &state.stashes[stash_colour];
 
-                        (
-                            stash[Pips::One] != NoneLeft,
-                            stash[Pips::Two] != NoneLeft,
-                            stash[Pips::Three] != NoneLeft,
-                        )
-                    };
+                    (
+                        stash[Pips::One] != NoneLeft,
+                        stash[Pips::Two] != NoneLeft,
+                        stash[Pips::Three] != NoneLeft,
+                    )
+                };
 
-                    let mut selected_pips = None;
+                let mut selected_pips = None;
 
-                    if has_one && piece.pips == Pips::One {
-                        selected_pips = Some(Pips::One);
-                    }
+                if has_one && piece.pips == Pips::One {
+                    selected_pips = Some(Pips::One);
+                }
 
-                    if has_one && piece.pips > Pips::One &&
-                        turn_options_button(
-                            p,
-                            &mut state.ui_context,
-                            "Small",
-                            (-2.0 / 3.0, 0.875),
-                            700,
-                            (mouse_x, mouse_y),
-                            mouse_button_state,
-                        ) {
-                        selected_pips = Some(Pips::One);
-                    }
-                    if has_two && piece.pips >= Pips::Two &&
-                        turn_options_button(
-                            p,
-                            &mut state.ui_context,
-                            "Medium",
-                            (0.0, 0.875),
-                            701,
-                            (mouse_x, mouse_y),
-                            mouse_button_state,
-                        ) {
-                        selected_pips = Some(Pips::Two);
-                    }
-                    if has_three && piece.pips >= Pips::Three &&
-                        turn_options_button(
-                            p,
-                            &mut state.ui_context,
-                            "Large",
-                            (2.0 / 3.0, 0.875),
-                            702,
-                            (mouse_x, mouse_y),
-                            mouse_button_state,
-                        ) {
-                        selected_pips = Some(Pips::Three);
-                    }
+                if has_one && piece.pips > Pips::One &&
+                    turn_options_button(
+                        p,
+                        &mut state.ui_context,
+                        "Small",
+                        (-2.0 / 3.0, 0.875),
+                        700,
+                        (mouse_x, mouse_y),
+                        mouse_button_state,
+                    ) {
+                    selected_pips = Some(Pips::One);
+                }
+                if has_two && piece.pips >= Pips::Two &&
+                    turn_options_button(
+                        p,
+                        &mut state.ui_context,
+                        "Medium",
+                        (0.0, 0.875),
+                        701,
+                        (mouse_x, mouse_y),
+                        mouse_button_state,
+                    ) {
+                    selected_pips = Some(Pips::Two);
+                }
+                if has_three && piece.pips >= Pips::Three &&
+                    turn_options_button(
+                        p,
+                        &mut state.ui_context,
+                        "Large",
+                        (2.0 / 3.0, 0.875),
+                        702,
+                        (mouse_x, mouse_y),
+                        mouse_button_state,
+                    ) {
+                    selected_pips = Some(Pips::Three);
+                }
 
-                    if let Some(pips) = selected_pips {
+                if let Some(pips) = selected_pips {
 
-                        if pips <= piece.pips {
-                            if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
-                                state.stashes[piece.colour].add(*piece);
-                                *piece = stash_piece;
+                    if pips <= piece.pips {
+                        if let Some(stash_piece) = state.stashes[stash_colour].remove(pips) {
+                            state.stashes[piece.colour].add(*piece);
+                            *piece = stash_piece;
 
-                                let hand = &mut state.player_hand;
+                            let hand = &mut state.player_hand;
 
-                                card_index_1.map(|i| hand.remove(i));
-                                card_index_2.map(|i| hand.remove(i));
-                                card_index_3.map(|i| hand.remove(i));
+                            card_index_1.map(|i| hand.remove(i));
+                            card_index_2.map(|i| hand.remove(i));
+                            card_index_3.map(|i| hand.remove(i));
 
-                                state.turn = Discard;
+                            for _ in 0..cards_owed {
+                                if let Some(card) =
+                                    deal_parts(&mut state.deck, &mut state.pile, &mut state.rng)
+                                {
+                                    hand.push(card);
+                                }
                             }
 
+                            state.turn = Discard;
                         }
+
                     }
                 }
             }
-        }
+        },
         Fly => if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
             state.turn = FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
         } else if let SelectCardFromHand(index) = action {
@@ -1837,7 +1865,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                     }
                                                 };
 
-                                                Some((selected_indicies, can_convert))
+                                                Some((
+                                                    selected_indicies,
+                                                    can_convert,
+                                                    pips_selected - pips_needed,
+                                                ))
                                             } else {
                                                 None
                                             }
@@ -1847,7 +1879,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         //convert to save a piece in your stash for a future turn
 
                                         match selections {
-                                            Some((selected_indicies, true)) => {
+                                            Some((selected_indicies, true, cards_owed)) => {
                                                 //Convert
 
                                                 for &pips in
@@ -1868,6 +1900,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                 for i in selected_indicies {
                                                                     hand.remove(i);
                                                                 }
+
+                                                                for _ in 0..cards_owed {
+                                                                    if let Some(card) =
+                                                                        deal_parts(
+                                                                            &mut state.deck,
+                                                                            &mut state.pile,
+                                                                            rng,
+                                                                        ) {
+                                                                        hand.push(card);
+                                                                    }
+                                                                }
+
                                                                 break 'turn;
                                                             }
 
@@ -1879,12 +1923,23 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 }
                                             }
 
-                                            Some((selected_indicies, false)) => {
+                                            Some((selected_indicies, false, cards_owed)) => {
                                                 //Demolish
                                                 space.pieces.remove(piece_index);
                                                 for i in selected_indicies {
                                                     hand.remove(i);
                                                 }
+
+                                                for _ in 0..cards_owed {
+                                                    if let Some(card) = deal_parts(
+                                                        &mut state.deck,
+                                                        &mut state.pile,
+                                                        rng,
+                                                    ) {
+                                                        hand.push(card);
+                                                    }
+                                                }
+
                                                 break 'turn;
                                             }
                                             _ => {}
