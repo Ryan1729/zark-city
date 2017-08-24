@@ -1760,16 +1760,32 @@ static TEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform sampler2D textures[2];\n\
     uniform int texture_index;\n\
     uniform vec4 tint;\n\
+    uniform vec2 rOffset;\n\
+    uniform vec2 gOffset;\n\
+    uniform vec2 bOffset;\n\
     varying vec2 texcoord;\n\
+
+    vec4 texture_fetch(sampler2D sampler, vec2 texcoord, vec2 rOffset, vec2 gOffset, vec2 bOffset) {\n\
+        vec4 colour;\n\
+
+        vec4 rValue = texture2D(sampler, texcoord - rOffset);\n\
+        vec4 gValue = texture2D(sampler, texcoord - gOffset);\n\
+        vec4 bValue = texture2D(sampler, texcoord - bOffset);\n\
+
+        colour = vec4(rValue.r, gValue.g, bValue.b, bValue.a);\n\
+
+        return colour;\n\
+    }
+
     void main() {\n\
         vec4 tex;
-        if (texture_index == 1) {
-            tex = texture2D(textures[1], texcoord);\n\
-        } else {
-            tex = texture2D(textures[0], texcoord);\n\
-        }
+        if (texture_index == 1) {\n\
+            tex = texture_fetch(textures[1], texcoord, vec2(0.0025, 0.0025), vec2(0.0025, 0.0025), vec2(0.0025, 0.0025));\n\
+        } else {\n\
 
-        gl_FragColor = tex + tint * tex.a;
+        }\n\
+
+        gl_FragColor = tex + tint * tex.a;\n\
     }";
 
 struct TextShader {
