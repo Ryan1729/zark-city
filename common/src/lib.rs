@@ -37,6 +37,8 @@ pub struct Platform {
     pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
     pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
     pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
+    pub draw_textured_poly_with_matrix_abberated:
+        fn([f32; 16], usize, TextureSpec, (f32, f32), (f32, f32), (f32, f32), usize),
     pub draw_text: fn(&str, (f32, f32), f32, f32, [f32; 4], usize),
     pub draw_layer: fn(usize, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
@@ -60,6 +62,7 @@ pub struct State {
     pub stashes: Stashes,
     pub hud_alpha: f32,
     pub highlighted: Highlighted,
+    pub abberation_spec: AbberationSpec,
     pub message: Message,
 }
 
@@ -116,6 +119,14 @@ impl Default for Message {
             timeout: Default::default(),
         }
     }
+}
+
+#[derive(Default, Debug)]
+pub struct AbberationSpec {
+    pub point_up: bool,
+    pub red: (f32, f32),
+    pub green: (f32, f32),
+    pub blue: (f32, f32),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

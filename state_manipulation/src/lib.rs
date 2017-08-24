@@ -135,6 +135,7 @@ fn make_state(mut rng: StdRng) -> State {
         },
         hud_alpha: 1.0,
         highlighted: PlayerOccupation,
+        abberation_spec: Default::default(),
         message: Default::default(),
     };
 
@@ -154,6 +155,12 @@ use Action::*;
 
 const FADE_RATE: f32 = 1.0 / 24.0;
 const TRANSLATION_SCALE: f32 = 0.0625;
+
+const ABBERATION_DELTA: f32 = 1.0 / 8192.0;
+const ABBERATION_MAX: f32 = 1.0 / 256.0;
+
+
+
 
 #[no_mangle]
 //returns true if quit requested
@@ -263,6 +270,31 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         released: mouse_released,
         held: state.mouse_held,
     };
+
+    {
+        let spec = &mut state.abberation_spec;
+        if spec.point_up {
+            spec.red.0 -= ABBERATION_DELTA;
+
+            spec.green.1 += ABBERATION_DELTA;
+
+            spec.blue.0 += ABBERATION_DELTA;
+
+            if spec.green.1 >= ABBERATION_MAX {
+                spec.point_up = false;
+            }
+        } else {
+            spec.red.0 += ABBERATION_DELTA;
+
+            spec.green.1 -= ABBERATION_DELTA;
+
+            spec.blue.0 -= ABBERATION_DELTA;
+
+            if spec.green.1 <= -ABBERATION_MAX {
+                spec.point_up = true;
+            }
+        }
+    }
 
     state.ui_context.frame_init();
 
@@ -389,7 +421,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 _ => {}
             }
 
-            draw_card(p, card_matrix, card_texture_spec);
+            if true {
+                draw_card_abberated(p, card_matrix, card_texture_spec, &state.abberation_spec);
+            } else {
+                draw_card(p, card_matrix, card_texture_spec);
+            }
         }
 
         for (i, piece) in pieces.into_iter().enumerate() {
@@ -2759,6 +2795,23 @@ fn is_power_block(board: &Board, block: Block) -> bool {
 
 fn draw_card(p: &Platform, card_matrix: [f32; 16], texture_spec: TextureSpec) {
     (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, 0);
+}
+fn draw_card_abberated(
+    p: &Platform,
+    card_matrix: [f32; 16],
+    texture_spec: TextureSpec,
+    abberation_spec: &AbberationSpec,
+) {
+    println!("{:?}", abberation_spec);
+    (p.draw_textured_poly_with_matrix_abberated)(
+        card_matrix,
+        CARD_POLY_INDEX,
+        texture_spec,
+        abberation_spec.red,
+        abberation_spec.green,
+        abberation_spec.blue,
+        0,
+    );
 }
 fn draw_empty_space(p: &Platform, card_matrix: [f32; 16]) {
     (p.draw_textured_poly_with_matrix)(

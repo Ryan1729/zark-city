@@ -26,7 +26,7 @@ use std::str;
 extern crate rusttype;
 extern crate unicode_normalization;
 
-use rusttype::{FontCollection, Font, Scale, point, vector, PositionedGlyph};
+use rusttype::{point, vector, Font, FontCollection, PositionedGlyph, Scale};
 
 use common::*;
 
@@ -324,6 +324,16 @@ impl Resources {
             let tint_uniform =
                 unsafe { ctx.GetUniformLocation(program, CString::new("tint").unwrap().as_ptr()) };
 
+            let red_offset_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("rOffset").unwrap().as_ptr())
+            };
+            let green_offset_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("gOffset").unwrap().as_ptr())
+            };
+            let blue_offset_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("bOffset").unwrap().as_ptr())
+            };
+
             TextureShader {
                 program,
                 pos_attr,
@@ -331,6 +341,9 @@ impl Resources {
                 texture_uniforms,
                 texture_xywh_uniform,
                 texture_index_uniform,
+                red_offset_uniform,
+                green_offset_uniform,
+                blue_offset_uniform,
                 tint_uniform,
             }
         };
@@ -410,10 +423,8 @@ impl Resources {
             (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
 
         unsafe {
-            self.ctx.BindBuffer(
-                gl::ELEMENT_ARRAY_BUFFER,
-                self.index_buffer,
-            );
+            self.ctx
+                .BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.index_buffer);
             self.ctx.BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
@@ -444,7 +455,7 @@ struct TextRenderCommands(
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
-    Option<TextRenderCommand>
+    Option<TextRenderCommand>,
 );
 
 const MAX_TEXT_RENDER_COMMANDS: u8 = 16;
@@ -662,7 +673,7 @@ struct CharTuple(
     char,
     char,
     char,
-    char
+    char,
 );
 
 use std::ops::{Index, IndexMut};
@@ -704,16 +715,16 @@ impl Index<u8> for CharTuple {
             29 => &self.29,
             30 => &self.30,
             31 => &self.31,
-            32=> &self.32,
-            33=> &self.33,
-            34=> &self.34,
-            35=> &self.35,
-            36=> &self.36,
-            37=> &self.37,
-            38=> &self.38,
-            39=> &self.39,
-            40=> &self.40,
-            41=> &self.41,
+            32 => &self.32,
+            33 => &self.33,
+            34 => &self.34,
+            35 => &self.35,
+            36 => &self.36,
+            37 => &self.37,
+            38 => &self.38,
+            39 => &self.39,
+            40 => &self.40,
+            41 => &self.41,
             42 => &self.42,
             43 => &self.43,
             44 => &self.44,
@@ -776,16 +787,16 @@ impl IndexMut<u8> for CharTuple {
             29 => &mut self.29,
             30 => &mut self.30,
             31 => &mut self.31,
-            32=> &mut self.32,
-            33=> &mut self.33,
-            34=> &mut self.34,
-            35=> &mut self.35,
-            36=> &mut self.36,
-            37=> &mut self.37,
-            38=> &mut self.38,
-            39=> &mut self.39,
-            40=> &mut self.40,
-            41=> &mut self.41,
+            32 => &mut self.32,
+            33 => &mut self.33,
+            34 => &mut self.34,
+            35 => &mut self.35,
+            36 => &mut self.36,
+            37 => &mut self.37,
+            38 => &mut self.38,
+            39 => &mut self.39,
+            40 => &mut self.40,
+            41 => &mut self.41,
             42 => &mut self.42,
             43 => &mut self.43,
             44 => &mut self.44,
@@ -936,10 +947,12 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
         println!("{:?}", canvas.window().drawable_size());
-        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (
-            cache_width,
-            cache_height,
-        ));
+        RESOURCES = Resources::new(
+            &app,
+            ctx,
+            canvas.window().drawable_size(),
+            (cache_width, cache_height),
+        );
     }
 
     let mut state = app.new_state();
@@ -957,6 +970,7 @@ fn main() {
         draw_poly_with_matrix,
         draw_textured_poly,
         draw_textured_poly_with_matrix,
+        draw_textured_poly_with_matrix_abberated,
         draw_text,
         draw_layer,
         set_verts,
@@ -983,32 +997,38 @@ fn main() {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => events.push(common::Event::Quit),
-                    Event::KeyDown { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) }))
-                    }
-                    Event::KeyUp { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) }))
-                    }
+                    Event::KeyDown {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) })),
+                    Event::KeyUp {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) })),
                     Event::MouseMotion { x, y, .. } => {
                         events.push(common::Event::MouseMove((x, y)))
                     }
-                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Left, .. } => {
-                        events.push(common::Event::LeftMouseUp)
-                    }
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
+                    } => events.push(common::Event::LeftMouseUp),
                     Event::MouseButtonDown {
-                        mouse_btn: sdl2::mouse::MouseButton::Left, ..
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
                     } => events.push(common::Event::LeftMouseDown),
-                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Right, .. } => {
-                        events.push(common::Event::RightMouseUp)
-                    }
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
+                    } => events.push(common::Event::RightMouseUp),
                     Event::MouseButtonDown {
-                        mouse_btn: sdl2::mouse::MouseButton::Right, ..
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
                     } => events.push(common::Event::RightMouseDown),
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::Resized(w, h), ..
+                        win_event: sdl2::event::WindowEvent::Resized(w, h),
+                        ..
                     } |
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h), ..
+                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h),
+                        ..
                     } => {
                         events.push(common::Event::WindowSize((w, h)));
                         unsafe {
@@ -1074,11 +1094,8 @@ fn main() {
 
             window.gl_swap_window();
 
-            if let Some(sleep_time) = frame_duration.checked_sub(
-                std::time::Instant::now().duration_since(
-                    start,
-                ),
-            )
+            if let Some(sleep_time) =
+                frame_duration.checked_sub(std::time::Instant::now().duration_since(start))
             {
                 std::thread::sleep(sleep_time);
             }
@@ -1188,10 +1205,29 @@ fn draw_textured_poly(
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
+    spec: TextureSpec,
+    frame_buffer_index: usize,
+) {
+    draw_textured_poly_with_matrix_abberated(
+        world_matrix,
+        poly_index,
+        spec,
+        (0.0, 0.0),
+        (0.0, 0.0),
+        (0.0, 0.0),
+        frame_buffer_index,
+    )
+}
+fn draw_textured_poly_with_matrix_abberated(
+    world_matrix: [f32; 16],
+    poly_index: usize,
     (texture_x, texture_y, texture_w, texture_h, texture_index, tint_r,
 tint_g,
 tint_b,
 tint_a): TextureSpec,
+r_offset: (f32,f32),
+g_offset: (f32,f32),
+b_offset: (f32,f32),
 frame_buffer_index: usize
 ){
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
@@ -1226,6 +1262,9 @@ frame_buffer_index: usize
             tint_g,
             tint_b,
             tint_a,
+            r_offset,
+            g_offset,
+            b_offset,
             frame_buffer,
         );
     }
@@ -1299,6 +1338,10 @@ fn draw_layer(frame_buffer_index: usize, alpha: f32) {
                 ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
 
                 ctx.Uniform1i(texture_shader.texture_index_uniform, 0);
+
+                ctx.Uniform2f(texture_shader.red_offset_uniform, 0.0, 0.0);
+                ctx.Uniform2f(texture_shader.green_offset_uniform, 0.0, 0.0);
+                ctx.Uniform2f(texture_shader.blue_offset_uniform, 0.0, 0.0);
 
                 //1 - y = (y * -1) + 1 so this flips the y texture coord
                 ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 1.0, 1.0, -1.0);
@@ -1431,6 +1474,9 @@ fn draw_verts_with_texture(
     tint_g: gl::types::GLfloat,
     tint_b: gl::types::GLfloat,
     tint_a: gl::types::GLfloat,
+    red_offset: (gl::types::GLfloat, gl::types::GLfloat),
+    green_offset: (gl::types::GLfloat, gl::types::GLfloat),
+    blue_offset: (gl::types::GLfloat, gl::types::GLfloat),
     frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
@@ -1458,6 +1504,22 @@ fn draw_verts_with_texture(
         ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
 
         ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
+
+        ctx.Uniform2f(
+            texture_shader.red_offset_uniform,
+            red_offset.0,
+            red_offset.1,
+        );
+        ctx.Uniform2f(
+            texture_shader.green_offset_uniform,
+            green_offset.0,
+            green_offset.1,
+        );
+        ctx.Uniform2f(
+            texture_shader.blue_offset_uniform,
+            blue_offset.0,
+            blue_offset.1,
+        );
 
         ctx.Uniform4f(
             texture_shader.texture_xywh_uniform,
@@ -1518,11 +1580,13 @@ fn render_text(
         let paragraph_coords = {
             let v_metrics = font.v_metrics(font_scale);
 
-            let no_offset_glyphs =
-                layout_paragraph(font, Scale::uniform(scale), paragraph_max_width, text, (
-                    0.0,
-                    v_metrics.line_gap,
-                ));
+            let no_offset_glyphs = layout_paragraph(
+                font,
+                Scale::uniform(scale),
+                paragraph_max_width,
+                text,
+                (0.0, v_metrics.line_gap),
+            );
 
             let paragraph_width = no_offset_glyphs.iter().fold(0, |acc, g| {
                 std::cmp::max(g.pixel_bounding_box().map(|r| r.max.x).unwrap_or(acc), acc)
@@ -1596,55 +1660,55 @@ fn render_text(
 
         let verts: Vec<_> = glyphs
             .iter()
-            .flat_map(|g| if let Ok(Some((uv_rect, screen_rect))) =
-                text_cache.rect_for(0, g)
-            {
-                let gl_rect = rusttype::Rect {
-                    min: origin +
-                        (vector(
-                            screen_rect.min.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                    max: origin +
-                        (vector(
-                            screen_rect.max.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                };
-                vec![
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                ]
-            } else {
-                Vec::new()
+            .flat_map(|g| {
+                if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
+                    let gl_rect = rusttype::Rect {
+                        min: origin +
+                            (vector(
+                                screen_rect.min.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                        max: origin +
+                            (vector(
+                                screen_rect.max.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                    };
+                    vec![
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                    ]
+                } else {
+                    Vec::new()
+                }
             })
             .collect();
 
@@ -1720,17 +1784,17 @@ struct ColourShader {
 }
 
 static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
-    attribute vec2 position;\n\
-    uniform mat4 matrix;\n\
-    void main() {\n\
-    gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-    }";
+                                          attribute vec2 position;\n\
+                                          uniform mat4 matrix;\n\
+                                          void main() {\n\
+                                          gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
+                                          }";
 
 static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform vec4 colour;\n\
-    void main() {\n\
-       gl_FragColor = colour;\n\
-    }";
+                                          uniform vec4 colour;\n\
+                                          void main() {\n\
+                                          gl_FragColor = colour;\n\
+                                          }";
 
 struct TextureShader {
     program: gl::types::GLuint,
@@ -1739,6 +1803,9 @@ struct TextureShader {
     texture_uniforms: [gl::types::GLsizei; 2],
     texture_xywh_uniform: gl::types::GLsizei,
     texture_index_uniform: gl::types::GLsizei,
+    red_offset_uniform: gl::types::GLsizei,
+    green_offset_uniform: gl::types::GLsizei,
+    blue_offset_uniform: gl::types::GLsizei,
     tint_uniform: gl::types::GLsizei,
 }
 
@@ -1757,20 +1824,43 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     }";
 
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform sampler2D textures[2];\n\
-    uniform int texture_index;\n\
-    uniform vec4 tint;\n\
-    varying vec2 texcoord;\n\
-    void main() {\n\
-        vec4 tex;
-        if (texture_index == 1) {
-            tex = texture2D(textures[1], texcoord);\n\
-        } else {
-            tex = texture2D(textures[0], texcoord);\n\
-        }
+uniform sampler2D textures[2];\n\
+uniform int texture_index;\n\
+uniform vec4 tint;\n\
+uniform vec2 rOffset;\n\
+uniform vec2 gOffset;\n\
+uniform vec2 bOffset;\n\
+varying vec2 texcoord;\n\
 
-        gl_FragColor = tex + tint * tex.a;
-    }";
+vec4 texture_fetch(
+    sampler2D sampler,
+    vec2 texcoord,
+    vec2 rOffset,
+    vec2 gOffset,
+    vec2 bOffset
+) {\n\
+    vec4 colour;\n\
+
+    vec4 rValue = texture2D(sampler, texcoord - rOffset);\n\
+    vec4 gValue = texture2D(sampler, texcoord - gOffset);\n\
+    vec4 bValue = texture2D(sampler, texcoord - bOffset);\n\
+    vec4 aValue = texture2D(sampler, texcoord);\n\
+
+    colour = vec4(rValue.r, gValue.g, bValue.b, aValue.a);\n\
+
+    return colour;\n\
+}
+
+void main() {\n\
+    vec4 tex;
+    if (texture_index == 1) {\n\
+        tex = texture_fetch(textures[1], texcoord, rOffset, gOffset, bOffset);\n\
+    } else {\n\
+        tex = texture_fetch(textures[0], texcoord, rOffset, gOffset, bOffset);\n\
+    }\n\
+
+    gl_FragColor = tex + tint * tex.a;\n\
+}";
 
 struct TextShader {
     program: gl::types::GLuint,
@@ -1780,28 +1870,30 @@ struct TextShader {
     texture_uniform: gl::types::GLsizei,
 }
 
+
 static FONT_VS_SRC: &'static str = "#version 120\n\
-        attribute vec2 position;\n\
-        attribute vec2 texcoord;\n\
-        attribute vec4 colour;\n\
-        varying vec2 v_texcoord;\n\
-        varying vec4 v_colour;\n\
-        void main() {\n\
-            gl_Position = vec4(position, 0.0, 1.0);\n\
-            v_texcoord = texcoord;\n\
-            v_colour = colour;\n\
-        }";
+                                    attribute vec2 position;\n\
+                                    attribute vec2 texcoord;\n\
+                                    attribute vec4 colour;\n\
+                                    varying vec2 v_texcoord;\n\
+                                    varying vec4 v_colour;\n\
+                                    void main() {\n\
+                                    gl_Position = vec4(position, 0.0, 1.0);
+                                    v_texcoord = texcoord;
+                                    v_colour = colour;
+                                    }";
 
 static FONT_FS_SRC: &'static str = "#version 120\n\
-        uniform sampler2D tex;\n\
-        varying vec2 v_texcoord;\n\
-        varying vec4 v_colour;\n\
-        void main() {\n\
-            gl_FragColor = v_colour * vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);\n\
-        }";
+    uniform sampler2D tex;\n\
+    varying vec2 v_texcoord;\n\
+    varying vec4 v_colour;\n\
+    void main() {\n\
+        vec4 tex = vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);
+        gl_FragColor = v_colour * tex;\n\
+    }";
 
-
-//shader helper functions based on https://gist.github.com/simias/c140d1479ada4d6218c0
+// shader helper functions based on
+// https://gist.github.com/simias/c140d1479ada4d6218c0
 fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl::types::GLuint {
     let shader;
     unsafe {
@@ -1825,12 +1917,11 @@ fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl
                 &mut length,
                 buffer.as_mut_ptr() as *mut i8,
             );
+            let log = std::ffi::CStr::from_ptr(std::mem::transmute(&buffer)).to_bytes();
             panic!(
                 "Compiler log (length: {}):\n{}",
                 length,
-                std::str::from_utf8(
-                    std::ffi::CStr::from_ptr(std::mem::transmute(&buffer)).to_bytes(),
-                ).unwrap()
+                std::str::from_utf8(log,).unwrap()
             );
         }
     }
@@ -1926,9 +2017,9 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         external_format,
                         data_type,
                         (match pixels {
-                             image_decoding::DecodingResult::U8(v) => v.as_ptr() as _,
-                             image_decoding::DecodingResult::U16(v) => v.as_ptr() as _,
-                         }),
+                            image_decoding::DecodingResult::U8(v) => v.as_ptr() as _,
+                            image_decoding::DecodingResult::U16(v) => v.as_ptr() as _,
+                        }),
                     );
                 }
             }
