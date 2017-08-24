@@ -916,7 +916,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             state.turn = SelectTurnOption;
         }
-        SelectTurnOption => {}
+        SelectTurnOption => {
+            state.highlighted = NoHighlighting;
+        }
         DrawThree => {
             //TODO drawing sound effect or other indication?
             if let Some(card) = deal(state) {
@@ -948,32 +950,39 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
         },
-        Spawn => if let SelectSpace(key) = action {
-            match spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
-                Ok(true) => {
-                    state.turn = Discard;
-                }
-                Ok(false) => {}
-                Err(message) => {
-                    state.message = message;
-                }
-            }
-        } else if right_mouse_pressed || escape_pressed {
-            state.turn = SelectTurnOption;
-        },
-        Build => if let SelectCardFromHand(index) = action {
-            let valid_target = if let Some(card) = state.player_hand.get(index) {
-                card.is_number()
-            } else {
-                false
-            };
+        Spawn => {
+            state.highlighted = PlayerOccupation;
 
-            if valid_target {
-                state.turn = BuildSelect(state.player_hand.remove(index), index);
+            if let SelectSpace(key) = action {
+                match spawn_if_possible(&mut state.board, &key, &mut state.stashes.player_stash) {
+                    Ok(true) => {
+                        state.turn = Discard;
+                    }
+                    Ok(false) => {}
+                    Err(message) => {
+                        state.message = message;
+                    }
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
-        } else if right_mouse_pressed || escape_pressed {
-            state.turn = SelectTurnOption;
-        },
+        }
+        Build => {
+            state.highlighted = PlayerOccupation;
+            if let SelectCardFromHand(index) = action {
+                let valid_target = if let Some(card) = state.player_hand.get(index) {
+                    card.is_number()
+                } else {
+                    false
+                };
+
+                if valid_target {
+                    state.turn = BuildSelect(state.player_hand.remove(index), index);
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
+            }
+        }
         BuildSelect(held_card, old_index) => {
             let build_targets =
                 get_all_build_targets(&state.board, state.stashes.player_stash.colour);
@@ -1358,30 +1367,34 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             }
         },
-        Fly => if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
-            state.turn = FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
-        } else if let SelectCardFromHand(index) = action {
-            let valid_target = if let Some(card) = state.player_hand.get(index) {
-                if card.value == Ace {
-                    true
+        Fly => {
+            state.highlighted = PlayerOccupation;
+            if let Some(only_ace_index) = get_only_ace_index(&state.player_hand) {
+                state.turn =
+                    FlySelectCarpet(state.player_hand.remove(only_ace_index), only_ace_index);
+            } else if let SelectCardFromHand(index) = action {
+                let valid_target = if let Some(card) = state.player_hand.get(index) {
+                    if card.value == Ace {
+                        true
+                    } else {
+                        state.message = Message {
+                            text: "That card is not an Ace!".to_owned(),
+                            timeout: WARNING_TIMEOUT,
+                        };
+
+                        false
+                    }
                 } else {
-                    state.message = Message {
-                        text: "That card is not an Ace!".to_owned(),
-                        timeout: WARNING_TIMEOUT,
-                    };
-
                     false
-                }
-            } else {
-                false
-            };
+                };
 
-            if valid_target {
-                state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
+                if valid_target {
+                    state.turn = FlySelectCarpet(state.player_hand.remove(index), index);
+                }
+            } else if right_mouse_pressed || escape_pressed {
+                state.turn = SelectTurnOption;
             }
-        } else if right_mouse_pressed || escape_pressed {
-            state.turn = SelectTurnOption;
-        },
+        }
         FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
             if is_space_movable(&state.board, &key) {
                 if let Some(space) = state.board.remove(&key) {
@@ -1536,6 +1549,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         Discard => {
+            state.highlighted = NoHighlighting;
             if state.player_hand.len() > 6 {
                 if let SelectCardFromHand(index) = action {
                     state.pile.push(state.player_hand.remove(index));
