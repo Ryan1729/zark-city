@@ -1147,6 +1147,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     state.turn = if pips_selected >= pips_needed &&
                         smallest_card_value > pips_selected - pips_needed
                     {
+                        state.message.timeout = 0;
                         ConvertSlashDemolishWhich(
                             space_coords,
                             piece_index,
@@ -1414,10 +1415,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if is_space_movable(&state.board, &key) {
                 if let Some(space) = state.board.remove(&key) {
                     state.turn = FlySelect(key, space, ace, old_index);
+                    state.message.timeout = 0;
                 }
             } else {
                 state.message = Message {
-                    text: "Moving that card leave a section of cards completely detached!"
+                    text: "Moving that card leaves a section of cards completely detached!"
                         .to_owned(),
                     timeout: WARNING_TIMEOUT,
                 }
@@ -1428,7 +1430,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = SelectTurnOption;
         } else {
             state.message = Message {
-                text: "Choose an Ace from your hand to discard.".to_owned(),
+                text: "Choose which card on the board to move.".to_owned(),
                 timeout: WARNING_TIMEOUT,
             };
         },
