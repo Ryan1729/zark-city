@@ -233,7 +233,15 @@ impl Stash {
             _ => false,
         }
     }
+
+    pub fn used_count(&self) -> u8 {
+        STASH_MAX - u8::from(self.one_pip)
+         - u8::from(self.two_pip)
+          - u8::from(self.three_pip)
+    }
 }
+
+const STASH_MAX: u8 = 9;
 
 use std::ops::{Index, IndexMut};
 

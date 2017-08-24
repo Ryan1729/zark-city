@@ -1158,7 +1158,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             pips_selected - pips_needed,
                         )
                     } else {
-                        if smallest_card_value <= pips_selected - pips_needed {
+                        if pips_selected >= pips_needed &&
+                            smallest_card_value <= pips_selected - pips_needed
+                        {
                             state.message = Message {
                                 text: "You cannot discard redundant face cards to get extra draws"
                                     .to_owned(),
@@ -1784,8 +1786,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         5 => {
                             //Convert/Demolish
-                            //TODO does it ever make sense to convert or demolish your own piece?
-
                             let chosen_enemy_piece = {
                                 let mut spaces: Vec<_> = state.board.keys().cloned().collect();
                                 //the cpu's choices should be a function of the rng
@@ -1793,15 +1793,38 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                                 let mut pieces = Vec::new();
 
-                                for key in spaces.iter() {
-                                    if let Some(space) = state.board.get(key) {
-                                        pieces.extend(
-                                            space
-                                                .pieces
-                                                .filtered_indicies(|piece| piece.colour != colour)
-                                                .iter()
-                                                .map(|i| (*key, *i)),
-                                        );
+                                let mut colours = Vec::new();
+
+                                colours.push(stashes.player_stash.colour);
+
+                                for stash in stashes.cpu_stashes.iter() {
+                                    colours.push(stash.colour);
+                                }
+
+                                colours.sort_by_key(|c| stashes[*c].used_count());
+
+                                //TODO does it ever make sense to
+                                //convert or demolish your own piece?
+                                //if not then why push the player colour
+                                //on in the first place?
+                                colours.retain(|c| *c != colour);
+
+                                for &target_colour in colours.pop().iter() {
+                                    for key in spaces.iter() {
+                                        if let Some(space) = state.board.get(key) {
+                                            //TODO choose largest size than we cn pay for,
+                                            //possbily prioritizing conversion over size?
+
+                                            pieces.extend(
+                                                space
+                                                    .pieces
+                                                    .filtered_indicies(
+                                                        |piece| piece.colour == target_colour,
+                                                    )
+                                                    .iter()
+                                                    .map(|i| (*key, *i)),
+                                            );
+                                        }
                                     }
                                 }
 
