@@ -1096,6 +1096,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.turn = ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
+        } else {
+            state.message = Message {
+                text: "Choose a piece to target.".to_owned(),
+                timeout: WARNING_TIMEOUT,
+            };
         },
         ConvertSlashDemolishDiscard(
             space_coords,
@@ -1192,6 +1197,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.turn = match state.turn {
                     ConvertSlashDemolishDiscard(_, _, None, None, None) => ConvertSlashDemolish,
                     _ => ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None),
+                };
+            } else {
+                state.message = Message {
+                    text: "Choose which face card(s) to discard from your hand.".to_owned(),
+                    timeout: WARNING_TIMEOUT,
                 };
             }
         }
@@ -1393,6 +1403,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.turn = SelectTurnOption;
+            } else {
+                state.message = Message {
+                    text: "Choose an Ace from your hand to discard.".to_owned(),
+                    timeout: WARNING_TIMEOUT,
+                };
             }
         }
         FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
@@ -1411,6 +1426,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             state.player_hand.insert(old_index, ace);
 
             state.turn = SelectTurnOption;
+        } else {
+            state.message = Message {
+                text: "Choose an Ace from your hand to discard.".to_owned(),
+                timeout: WARNING_TIMEOUT,
+            };
         },
         FlySelect(old_coords, space, ace, old_index) => {
             let Space {
