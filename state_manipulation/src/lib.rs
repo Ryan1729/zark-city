@@ -614,6 +614,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 (mouse_x, mouse_y),
                 mouse_button_state,
             ) {
+                if target_turn == ConvertSlashDemolish {
+                    state.message = Message {
+                        text: "Choose a piece to target.".to_owned(),
+                        timeout: WARNING_TIMEOUT,
+                    };
+                } else if target_turn == Fly {
+                    state.message = Message {
+                        text: "Choose an Ace from your hand to discard.".to_owned(),
+                        timeout: WARNING_TIMEOUT,
+                    };
+                }
+
                 state.turn = target_turn;
             };
         }
@@ -1094,14 +1106,21 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         ConvertSlashDemolish => if let SelectPiece(space_coords, piece_index) = action {
-            state.turn = ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+            let valid_targets =
+                occupied_by_or_adjacent_spaces(&state.board, state.stashes.player_stash.colour);
+            if valid_targets.contains(&space_coords) {
+                state.turn =
+                    ConvertSlashDemolishDiscard(space_coords, piece_index, None, None, None);
+            } else {
+                let text =
+                    "You must target a piece at most one space away from your pieces.".to_owned();
+                state.message = Message {
+                    text,
+                    timeout: WARNING_TIMEOUT,
+                };
+            }
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
-        } else {
-            state.message = Message {
-                text: "Choose a piece to target.".to_owned(),
-                timeout: WARNING_TIMEOUT,
-            };
         },
         ConvertSlashDemolishDiscard(
             space_coords,
@@ -1269,7 +1288,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         (mouse_x, mouse_y),
                         mouse_button_state,
                     ) {
-                    space.pieces.remove(piece_index);
+                    if let Some(piece) = space.pieces.remove(piece_index) {
+                        stash.add(piece);
+                    }
 
                     card_index_1.map(|i| hand.remove(i));
                     card_index_2.map(|i| hand.remove(i));
@@ -1414,11 +1435,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 }
             } else if right_mouse_pressed || escape_pressed {
                 state.turn = SelectTurnOption;
-            } else {
-                state.message = Message {
-                    text: "Choose an Ace from your hand to discard.".to_owned(),
-                    timeout: WARNING_TIMEOUT,
-                };
             }
         }
         FlySelectCarpet(ace, old_index) => if let SelectSpace(key) = action {
@@ -1920,7 +1936,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         5 => {
                             //Convert/Demolish
                             let chosen_enemy_piece = {
-                                let mut spaces: Vec<_> = state.board.keys().cloned().collect();
+                                let mut spaces: Vec<(i8, i8)> =
+                                    occupied_by_or_adjacent_spaces(&state.board, colour);
                                 //the cpu's choices should be a function of the rng
                                 spaces.sort();
 
@@ -2074,7 +2091,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                                             Some((selected_indicies, false, cards_owed)) => {
                                                 //Demolish
-                                                space.pieces.remove(piece_index);
+                                                if let Some(piece) =
+                                                    space.pieces.remove(piece_index)
+                                                {
+                                                    stashes[piece.colour].add(piece);
+                                                }
+
                                                 for i in selected_indicies {
                                                     hand.remove(i);
                                                 }
@@ -2318,6 +2340,28 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     false
+}
+
+fn occupied_by_or_adjacent_spaces(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
+    let mut result: Vec<(i8, i8)> = {
+        let mut set = get_all_spaces_occupied_by(board, colour);
+
+        let initial_keys: Vec<(i8, i8)> = set.iter().cloned().collect();
+
+        for key in initial_keys {
+            set.extend(
+                FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + key.0, y + key.1)),
+            );
+        }
+
+        set.into_iter().collect()
+    };
+    //we want the order to be a function of the random seed
+    result.sort();
+
+    result
 }
 
 //a cheesy way to do an outline
