@@ -1626,6 +1626,80 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     hand.push(card);
                 }
 
+                let possible_disruption_target = {
+                    let mut completable_power_blocks = completable_power_blocks(&state.board);
+
+                    completable_power_blocks.retain(|completable| {
+                        let has_card_to_complete: bool = match completable.completion {
+                            Unique(suit, value) => hand.contains(&Card { suit, value }),
+                            ValueMatch(v) => hand.iter().any(|c| v == c.value),
+                            SuitedEnds(suit, (v1, v2)) => {
+                                hand.contains(&Card { suit, value: v1 }) ||
+                                    hand.contains(&Card { suit, value: v2 })
+                            }
+                        };
+
+                        !has_card_to_complete
+                    });
+
+                    let disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+                        .iter()
+                        .flat_map(|completable| completable.keys.iter().cloned())
+                        .collect();
+
+                    //TODO should we select the easiestto disrupt one,
+                    // or the one that seems like it is closes to being done?
+
+                    rng.choose(&disruption_targets).cloned()
+                };
+
+                enum Plan {
+                    Fly((i8, i8)),
+                    ConvertSlashDemolish((i8, i8), usize),
+                    Move((i8, i8)),
+                    Hatch((i8, i8)),
+                }
+
+
+
+
+                let possible_plan: Option<Plan> = {
+                    let board = &state.board;
+
+                    possible_disruption_target.and_then(|target| {
+                    let occupys_target = is_occupied_by(&board, &target, colour);
+
+                    if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
+                        Some(Plan::Fly(target))
+                    } else {
+                    //     let adjacent_keys = ;
+                    //
+                    //     let adjacent_to_target = adjacent_keys.iter().any(|key|
+                    //         is_occupied_by(&board, key, colour)
+                    // );
+                    //     if adjacent_to_target || occupys_target {
+                    //         if let Some(target_piece) =  {
+                    //             return Some(Plan::ConvertSlashDemolish(target, target_piece));
+                    //         }
+                    //     }
+                    //
+                    //     if adjacent_to_target {
+                    //         Some(Plan::Move(target))
+                    //     } else if stashes[colour].is_full() {
+                    //
+                    //         adjacent_keys.iter().any(|key|
+                    //             !board.contains_key(key)
+                    //     ).map(|target_blank|
+                    //             Plan::Hatch(target_blank)
+                    //         )
+                    //     } else {
+                    None
+                    // }
+
+                    }
+                })
+                };
+
                 'turn: loop {
                     //TODO better "AI". Evaluate every use of rng in this match statement
                     match rng.gen_range(0, 8) {
@@ -1978,28 +2052,33 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             let chosen_space = {
                                 let board = &mut state.board;
+                                if let Some(Plan::Fly(target)) = possible_plan {
+                                    board.remove(&target).map(|space| (target, space))
+                                } else {
+                                    let mut spaces: Vec<_> =
+                                        get_all_spaces_occupied_by(board, colour)
+                                            .iter()
+                                            .cloned()
+                                            .collect();
 
-                                let mut spaces: Vec<_> = get_all_spaces_occupied_by(board, colour)
-                                    .iter()
-                                    .cloned()
-                                    .collect();
-
-                                //the cpu's choices should be a function of the rng
-                                spaces.sort();
+                                    //the cpu's choices should be a function of the rng
+                                    spaces.sort();
 
 
-                                rng.choose(&spaces).and_then(
-                                    |key| if is_space_movable(board, key) {
-                                        board.remove(key).map(|space| (*key, space))
-                                    } else {
-                                        None
-                                    },
-                                )
+                                    rng.choose(&spaces).and_then(
+                                        |key| if is_space_movable(board, key) {
+                                            board.remove(key).map(|space| (*key, space))
+                                        } else {
+                                            None
+                                        },
+                                    )
+                                }
                             };
 
                             if let Some((old_coords, space)) = chosen_space {
                                 let fly_from_targets = fly_from_targets(&state.board, &old_coords);
-
+                                //TODO if there is a Fly Plan then place it as far away as possible
+                                //or in a place that helps the cpu player
                                 let target_space_coords = rng.choose(&fly_from_targets);
 
                                 if let Some(key) = target_space_coords {
@@ -2750,6 +2829,142 @@ fn power_blocks(board: &Board) -> Vec<Block> {
     result
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CompletableBlock {
+    keys: [(i8, i8); 2],
+    completion: Completion,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Completion {
+    Unique(Suit, Value),
+    ValueMatch(Value),
+    SuitedEnds(Suit, (Value, Value)),
+}
+use Completion::*;
+
+fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlock> {
+    if let Some((keys, mut cards)) = block_to_two_cards_and_a_blank(board, block) {
+        cards.sort();
+
+        match (cards[0], cards[1]) {
+            (Card { value: v1, .. }, Card { value: v2, .. })
+                if v1.is_number() && v2.is_number() && v1 == v2 =>
+            {
+                Some(CompletableBlock {
+                    keys,
+                    completion: ValueMatch(v1),
+                })
+            }
+            (
+                Card {
+                    value: v1,
+                    suit: s1,
+                },
+                Card {
+                    value: v2,
+                    suit: s2,
+                },
+            ) if v1.is_number() && v2.is_number() && s1 == s2 =>
+            {
+                let v1_f32 = f32::from(v1);
+                let v2_f32 = f32::from(v2);
+                if v1_f32 + 1.0 == v2_f32 {
+                    match (v1.lower_number(), v2.higher_number()) {
+                        (Some(low), Some(high)) => Some(CompletableBlock {
+                            keys,
+                            completion: SuitedEnds(s1, (low, high)),
+                        }),
+                        (Some(v), _) | (_, Some(v)) => Some(CompletableBlock {
+                            keys,
+                            completion: Unique(s1, v),
+                        }),
+                        (None, None) => None,
+                    }
+                } else if v1_f32 + 2.0 == v2_f32 {
+                    v1.higher_number().map(|v| {
+                        CompletableBlock {
+                            keys,
+                            completion: Unique(s1, v),
+                        }
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+fn block_to_two_cards_and_a_blank(
+    board: &Board,
+    block: Block,
+) -> Option<([(i8, i8); 2], [Card; 2])> {
+    let coords = block_to_coords(block);
+    let mut pairs_iter = coords
+        .iter()
+        .map(|key| board.get(key).map(|s| (*key, s.card)));
+    let possible_pairs: [Option<((i8, i8), Card)>; 3] = [
+        pairs_iter.next().and_then(id),
+        pairs_iter.next().and_then(id),
+        pairs_iter.next().and_then(id),
+    ];
+
+    match (possible_pairs[0], possible_pairs[1], possible_pairs[2]) {
+        (Some(p1), Some(p2), _) | (Some(p1), _, Some(p2)) | (_, Some(p1), Some(p2)) => {
+            Some(([p1.0, p2.0], [p1.1, p2.1]))
+        }
+        _ => None,
+    }
+}
+
+fn completable_power_blocks(board: &Board) -> Vec<CompletableBlock> {
+    let mut result = Vec::new();
+
+    for &(x, y) in board.keys() {
+        let horizontal = Horizontal(y, (x - 1, x, x + 1));
+
+        if let Some(completable) = completable_power_block(board, horizontal) {
+            result.push(completable);
+        }
+
+        let vertical = Vertical(x, (y - 1, y, y + 1));
+
+        if let Some(completable) = completable_power_block(board, vertical) {
+            result.push(completable);
+        }
+
+        let up_right = UpRight(x, y);
+
+        if let Some(completable) = completable_power_block(board, up_right) {
+            result.push(completable);
+        }
+
+        let up_left = UpLeft(x, y);
+
+        if let Some(completable) = completable_power_block(board, up_left) {
+            result.push(completable);
+        }
+
+        let down_right = DownRight(x, y);
+
+        if let Some(completable) = completable_power_block(board, down_right) {
+            result.push(completable);
+        }
+
+        let down_left = DownLeft(x, y);
+
+        if let Some(completable) = completable_power_block(board, down_left) {
+            result.push(completable);
+        }
+    }
+
+    result
+}
+
 fn block_to_coords(block: Block) -> [(i8, i8); 3] {
     match block {
         Horizontal(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
@@ -2809,8 +3024,20 @@ fn is_power_block(board: &Board, block: Block) -> bool {
             {
                 true
             }
-            (Card { value: v1, suit: s1 }, Card { value: v2, suit: s2 }, Card { value: v3, suit: s3 })
-                if v1.is_number() && v2.is_number() && v3.is_number()  && s1 == s2 && s2 == s3 =>
+            (
+                Card {
+                    value: v1,
+                    suit: s1,
+                },
+                Card {
+                    value: v2,
+                    suit: s2,
+                },
+                Card {
+                    value: v3,
+                    suit: s3,
+                },
+            ) if v1.is_number() && v2.is_number() && v3.is_number() && s1 == s2 && s2 == s3 =>
             {
                 f32::from(v1) + 1.0 == f32::from(v2) && f32::from(v2) + 1.0 == f32::from(v3)
             }

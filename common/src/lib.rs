@@ -824,6 +824,36 @@ impl Value {
             Ten => 10,
         }
     }
+
+    pub fn lower_number(&self) -> Option<Value> {
+        match *self {
+            Two | Ace | Queen | King => None,
+            Three => Some(Two),
+            Four => Some(Three),
+            Five => Some(Four),
+            Six => Some(Five),
+            Seven => Some(Six),
+            Eight => Some(Seven),
+            Nine => Some(Eight),
+            Ten => Some(Nine),
+            Jack => Some(Ten),
+        }
+    }
+
+    pub fn higher_number(&self) -> Option<Value> {
+        match *self {
+            Ten | Jack | Queen | King => None,
+            Ace => Some(Two),
+            Two => Some(Three),
+            Three => Some(Four),
+            Four => Some(Five),
+            Five => Some(Six),
+            Six => Some(Seven),
+            Seven => Some(Eight),
+            Eight => Some(Nine),
+            Nine => Some(Ten),
+        }
+    }
 }
 
 impl fmt::Display for Value {
