@@ -1653,6 +1653,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     rng.choose(&disruption_targets).cloned()
                 };
 
+                #[derive(Copy, Clone, Debug)]
                 enum Plan {
                     Fly((i8, i8)),
                     ConvertSlashDemolish((i8, i8), usize),
@@ -1660,49 +1661,71 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     Hatch((i8, i8)),
                 }
 
-
-
-
-                let possible_plan: Option<Plan> = {
+                let mut possible_plan: Option<Plan> = {
                     let board = &state.board;
 
                     possible_disruption_target.and_then(|target| {
-                    let occupys_target = is_occupied_by(&board, &target, colour);
+                        let occupys_target = is_occupied_by(&board, &target, colour);
 
-                    if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
-                        Some(Plan::Fly(target))
-                    } else {
-                    //     let adjacent_keys = ;
-                    //
-                    //     let adjacent_to_target = adjacent_keys.iter().any(|key|
-                    //         is_occupied_by(&board, key, colour)
-                    // );
-                    //     if adjacent_to_target || occupys_target {
-                    //         if let Some(target_piece) =  {
-                    //             return Some(Plan::ConvertSlashDemolish(target, target_piece));
-                    //         }
-                    //     }
-                    //
-                    //     if adjacent_to_target {
-                    //         Some(Plan::Move(target))
-                    //     } else if stashes[colour].is_full() {
-                    //
-                    //         adjacent_keys.iter().any(|key|
-                    //             !board.contains_key(key)
-                    //     ).map(|target_blank|
-                    //             Plan::Hatch(target_blank)
-                    //         )
-                    //     } else {
-                    None
-                    // }
+                        if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
+                            Some(Plan::Fly(target))
+                        } else {
+                            let adjacent_keys: Vec<_> = {
+                                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                                    .iter()
+                                    .map(|&(x, y)| (x + target.0, y + target.1))
+                                    .collect();
 
-                    }
-                })
+                                rng.shuffle(&mut adjacent_keys);
+
+                                adjacent_keys
+                            };
+
+                            let adjacent_to_target = adjacent_keys
+                                .iter()
+                                .any(|key| is_occupied_by(&board, key, colour));
+
+                            if adjacent_to_target || occupys_target {
+                                let possible_target_piece = board.get(&target).and_then(|space| {
+                                    let other_player_pieces =
+                                        space.pieces.filtered_indicies(|p| p.colour != colour);
+
+                                    //TODO how should we pick whihc colour to target?
+                                    rng.choose(&other_player_pieces).cloned()
+                                });
+                                if let Some(target_piece) = possible_target_piece {
+                                    return Some(Plan::ConvertSlashDemolish(target, target_piece));
+                                }
+                            }
+
+                            if adjacent_to_target {
+                                Some(Plan::Move(target))
+                            } else if stashes[colour].is_full() {
+                                adjacent_keys
+                                    .iter()
+                                    .find(|key| !board.contains_key(key))
+                                    .map(|target_blank| Plan::Hatch(*target_blank))
+                            } else {
+                                None
+                            }
+                        }
+                    })
                 };
 
                 'turn: loop {
                     //TODO better "AI". Evaluate every use of rng in this match statement
-                    match rng.gen_range(0, 8) {
+                    let turn_option = if let Some(plan) = possible_plan {
+                        match plan {
+                            Plan::Fly(_) => 6,
+                            Plan::ConvertSlashDemolish(_, _) => 5,
+                            Plan::Move(_) => 4,
+                            Plan::Hatch(_) => 7,
+                        }
+                    } else {
+                        rng.gen_range(0, 8)
+                    };
+
+                    match turn_option {
                         1 => {
                             //Grow
 
@@ -1799,7 +1822,38 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         4 => {
                             //Move
-                            let chosen_piece = {
+                            let chosen_piece = if let Some(Plan::Move(target)) = possible_plan {
+                                let adjacent_keys: Vec<_> = {
+                                    let mut adjacent_keys : Vec<_> = FOUR_WAY_OFFSETS
+                                        .iter()
+                                        .map(|&(x, y)| (x + target.0, y + target.1))
+                                        .collect();
+
+                                    rng.shuffle(&mut adjacent_keys);
+
+                                    adjacent_keys
+                                };
+
+                                let mut result = None;
+
+                                for key in adjacent_keys.iter() {
+                                    if let Some(space) = state.board.get(key) {
+                                        let own_pieces =
+                                            space.pieces.filtered_indicies(|p| p.colour == colour);
+                                        if let Some(piece_index) = own_pieces.last() {
+                                            result = Some((target, *piece_index));
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if result.is_some() {
+                                    result
+                                } else {
+                                    possible_plan = None;
+                                    None
+                                }
+                            } else {
                                 let mut occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour)
                                         .into_iter()
@@ -1825,14 +1879,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             };
 
                             if let Some((space_coords, piece_index)) = chosen_piece {
-                                let valid_targets: Vec<_> =
+                                let possible_target_space_coords =
+                                    if let Some(Plan::Move(target)) = possible_plan {
+                                        Some(target)
+                                    } else {
+                                        let valid_targets: Vec<_> =
                                     get_valid_move_targets(&state.board, space_coords)
                                         .into_iter()
                                         .collect();
 
-                                if let Some(target_space_coords) =
-                                    rng.choose(&valid_targets).map(|&i| i)
-                                {
+                                        rng.choose(&valid_targets).map(|&i| i)
+                                    };
+
+                                if let Some(target_space_coords) = possible_target_space_coords {
                                     let possible_piece = if let Occupied(mut source_entry) =
                                         state.board.entry(space_coords)
                                     {
@@ -2053,7 +2112,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             let chosen_space = {
                                 let board = &mut state.board;
                                 if let Some(Plan::Fly(target)) = possible_plan {
-                                    board.remove(&target).map(|space| (target, space))
+                                    if board.contains_key(&target) {
+                                        board.remove(&target).map(|space| (target, space))
+                                    } else {
+                                        possible_plan = None;
+                                        None
+                                    }
                                 } else {
                                     let mut spaces: Vec<_> =
                                         get_all_spaces_occupied_by(board, colour)
@@ -2094,7 +2158,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         7 => {
                             //Hatch
-                            println!("Hatch");
+
                             let mut stash = stashes[colour];
 
                             let no_pieces_on_board = stash.is_full();
@@ -2106,23 +2170,24 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     .collect();
 
                                 if let Some(&card_index) = rng.choose(&number_cards) {
-                                    println!("Some(&card_index)");
-                                    let hatch_targets: Vec<
+                                    let target_space_coords =
+                                        if let Some(Plan::Hatch(target)) = possible_plan {
+                                            Some(target)
+                                        } else {
+                                            let hatch_targets: Vec<
                                         (i8, i8),
                                     > = get_all_hatch_targets(&state.board)
                                         .iter()
                                         .cloned()
                                         .collect();
 
-                                    let target_space_coords = rng.choose(&hatch_targets);
+                                            rng.choose(&hatch_targets).cloned()
+                                        };
 
-                                    if let Some(&key) = target_space_coords {
-                                        println!("Some(&key)");
-
+                                    if let Some(key) = target_space_coords {
                                         let mut pieces: SpacePieces = Default::default();
 
                                         if let Some(piece) = stash.remove(Pips::One) {
-                                            println!("Some(piece)");
                                             pieces.push(piece);
                                         }
 
@@ -2632,9 +2697,7 @@ use std::collections::HashSet;
 fn get_valid_move_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
-    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-
-    for &(dx, dy) in offsets.iter() {
+    for &(dx, dy) in FOUR_WAY_OFFSETS.iter() {
         let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
         if board.contains_key(&new_coords) {
             result.insert(new_coords);
@@ -2649,10 +2712,8 @@ fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)
 
     let occupied_spaces = get_all_spaces_occupied_by(board, colour);
 
-    let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-
     for &(x, y) in occupied_spaces.iter() {
-        for &(dx, dy) in offsets.iter() {
+        for &(dx, dy) in FOUR_WAY_OFFSETS.iter() {
             let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
             if !board.contains_key(&new_coords) {
                 result.insert(new_coords);
@@ -3556,10 +3617,8 @@ fn first_round_targets(board: &Board) -> HashSet<(i8, i8)> {
     } else {
         let full_spaces = board.keys();
 
-        let offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-
         for &(x, y) in full_spaces {
-            for &(dx, dy) in offsets.iter() {
+            for &(dx, dy) in FOUR_WAY_OFFSETS.iter() {
                 let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
                 if !board.contains_key(&new_coords) {
                     result.insert(new_coords);

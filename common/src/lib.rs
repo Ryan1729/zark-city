@@ -1279,6 +1279,8 @@ fn can_fly_helper(
     false
 }
 
+pub const FOUR_WAY_OFFSETS: [(i8, i8); 4]  = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
 pub const EIGHT_WAY_OFFSETS: [(i8, i8); 8] = [
     (1, 0),
     (1, 1),
