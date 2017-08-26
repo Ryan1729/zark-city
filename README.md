@@ -6,3 +6,4 @@ This is a single-player only version of [the board game](http://www.looneylabs.c
 
 # TODO
 * better Cpu "AI"
+* start a another game after first one ends

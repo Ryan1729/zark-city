@@ -48,7 +48,14 @@ fn deal(state: &mut State) -> Option<Card> {
 fn deal_parts(deck: &mut Vec<Card>, pile: &mut Vec<Card>, rng: &mut StdRng) -> Option<Card> {
     //reshuffle if we run out of cards.
     if deck.len() == 0 {
+        if cfg!(debug_assertions) {
+            println!("reshuffle");
+        }
         if pile.len() == 0 {
+            if cfg!(debug_assertions) {
+                println!("========= empty pile");
+            }
+
             return None;
         }
 
@@ -658,10 +665,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         _ => {}
     }
 
-    match action {
-        NoAction => {}
-        _ => {
-            println!("{:?}", action);
+    if cfg!(debug_assertions) {
+        match action {
+            NoAction => {}
+            _ => {
+                println!("{:?}", action);
+            }
         }
     }
 
@@ -838,17 +847,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         break;
                     }
                     Cpu(i) => {
-                        let possible_targets_set = first_round_targets(&state.board);
-
-                        let mut possible_targets: Vec<_> = possible_targets_set.iter().collect();
-
+                        let possible_targets = set_to_vec(first_round_targets(&state.board));
                         //TODO should we try to make a power block? or avoid one?
 
-                        //we want the order to be a function of the random seed
-                        possible_targets.sort();
-                        state.rng.shuffle(&mut possible_targets);
-
-                        if let Some(key) = possible_targets.pop() {
+                        if let Some(key) = state.rng.choose(&possible_targets) {
                             let stash = &mut state.stashes.cpu_stashes[i];
                             let space_and_piece_available =
                                 stash[Pips::One] != NoneLeft && state.board.get(key).is_none();
@@ -998,7 +1000,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         BuildSelect(held_card, old_index) => {
             let build_targets =
-                get_all_build_targets(&state.board, state.stashes.player_stash.colour);
+                get_all_build_targets_set(&state.board, state.stashes.player_stash.colour);
 
             let target_space_coords = place_card(
                 p,
@@ -1556,7 +1558,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
         }
         HatchSelect(held_card, old_index) => {
-            let hatch_targets = get_all_hatch_targets(&state.board);
+            let hatch_targets = get_all_hatch_targets_set(&state.board);
 
             let target_space_coords = place_card(
                 p,
@@ -1756,12 +1758,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //Grow
 
                             let chosen_piece = {
-                                let mut occupied_spaces: Vec<_> =
-                                    get_all_spaces_occupied_by(&state.board, colour)
-                                        .into_iter()
-                                        .collect();
-                                //the cpu's choices should be a function of the rng
-                                occupied_spaces.sort();
+                                let occupied_spaces: Vec<_> =
+                                    get_all_spaces_occupied_by(&state.board, colour);
 
                                 if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
                                 {
@@ -1796,12 +1794,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         2 => {
                             //Spawn
-                            let mut occupied_spaces: Vec<_> =
-                                get_all_spaces_occupied_by(&state.board, colour)
-                                    .into_iter()
-                                    .collect();
-                            //the cpu's choices should be a function of the rng
-                            occupied_spaces.sort();
+                            let occupied_spaces: Vec<_> =
+                                get_all_spaces_occupied_by(&state.board, colour);
 
                             if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
                                 match spawn_if_possible(
@@ -1827,12 +1821,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             number_cards.sort();
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
-                                let mut build_targets: Vec<_> =
-                                    get_all_build_targets(&state.board, colour)
-                                        .into_iter()
-                                        .collect();
-
-                                build_targets.sort();
+                                let build_targets = get_all_build_targets(&state.board, colour);
 
                                 if let Some(&key) = rng.choose(&build_targets) {
                                     state.board.insert(
@@ -1869,7 +1858,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         let own_pieces =
                                             space.pieces.filtered_indicies(|p| p.colour == colour);
                                         if let Some(piece_index) = own_pieces.last() {
-                                            result = Some((target, *piece_index));
+                                            result = Some((*key, *piece_index));
                                             break;
                                         }
                                     }
@@ -1882,12 +1871,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     None
                                 }
                             } else {
-                                let mut occupied_spaces: Vec<_> =
-                                    get_all_spaces_occupied_by(&state.board, colour)
-                                        .into_iter()
-                                        .collect();
-                                //the cpu's choices should be a function of the rng
-                                occupied_spaces.sort();
+                                let occupied_spaces: Vec<_> =
+                                    get_all_spaces_occupied_by(&state.board, colour);
 
                                 if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
                                 {
@@ -1911,10 +1896,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     if let Some(Plan::Move(target)) = possible_plan {
                                         Some(target)
                                     } else {
-                                        let valid_targets: Vec<_> =
-                                    get_valid_move_targets(&state.board, space_coords)
-                                        .into_iter()
-                                        .collect();
+                                        let valid_targets = set_to_vec(
+                                            get_valid_move_targets(&state.board, space_coords),
+                                        );
 
                                         rng.choose(&valid_targets).map(|&i| i)
                                     };
@@ -1948,51 +1932,63 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         5 => {
                             //Convert/Demolish
                             let chosen_enemy_piece = {
-                                let mut spaces: Vec<(i8, i8)> =
+                                let spaces: Vec<(i8, i8)> =
                                     occupied_by_or_adjacent_spaces(&state.board, colour);
-                                //the cpu's choices should be a function of the rng
-                                spaces.sort();
 
-                                let mut pieces = Vec::new();
 
-                                let mut colours = Vec::new();
+                                let mut result: Option<
+                                    ((i8, i8), usize),
+                                > = None;
 
-                                colours.push(stashes.player_stash.colour);
-
-                                for stash in stashes.cpu_stashes.iter() {
-                                    colours.push(stash.colour);
-                                }
-
-                                colours.sort_by_key(|c| stashes[*c].used_count());
-
-                                //TODO does it ever make sense to
-                                //convert or demolish your own piece?
-                                //if not then why push the player colour
-                                //on in the first place?
-                                colours.retain(|c| *c != colour);
-
-                                for &target_colour in colours.pop().iter() {
-                                    for key in spaces.iter() {
-                                        if let Some(space) = state.board.get(key) {
-                                            //TODO choose largest size than we cn pay for,
-                                            //possbily prioritizing conversion over size?
-
-                                            pieces.extend(
-                                                space
-                                                    .pieces
-                                                    .filtered_indicies(
-                                                        |piece| piece.colour == target_colour,
-                                                    )
-                                                    .iter()
-                                                    .map(|i| (*key, *i)),
-                                            );
+                                if let Some(Plan::ConvertSlashDemolish(space_coords, piece_index))
+                                    = possible_plan {
+                                    if let Some(space) = state.board.get(&space_coords) {
+                                        if space.pieces.get(piece_index).is_some() {
+                                            result = Some((space_coords, piece_index));
                                         }
                                     }
                                 }
 
-                                let result: Option<
-                                    ((i8, i8), usize),
-                                > = rng.choose(&pieces).cloned();
+                                if result.is_none() {
+                                    let mut pieces = Vec::new();
+
+                                    let mut colours = Vec::new();
+
+                                    colours.push(stashes.player_stash.colour);
+
+                                    for stash in stashes.cpu_stashes.iter() {
+                                        colours.push(stash.colour);
+                                    }
+
+                                    colours.sort_by_key(|c| stashes[*c].used_count());
+
+                                    //TODO does it ever make sense to
+                                    //convert or demolish your own piece?
+                                    //if not then why push the player colour
+                                    //on in the first place?
+                                    colours.retain(|c| *c != colour);
+
+                                    for &target_colour in colours.pop().iter() {
+                                        for key in spaces.iter() {
+                                            if let Some(space) = state.board.get(key) {
+                                                //TODO choose largest size than we cn pay for,
+                                                //possbily prioritizing conversion over size?
+
+                                                pieces.extend(
+                                                    space
+                                                        .pieces
+                                                        .filtered_indicies(
+                                                            |piece| piece.colour == target_colour,
+                                                        )
+                                                        .iter()
+                                                        .map(|i| (*key, *i)),
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    result = rng.choose(&pieces).cloned()
+                                }
 
                                 result
                             };
@@ -2055,6 +2051,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                     pips_selected - pips_needed,
                                                 ))
                                             } else {
+                                                possible_plan = None;
                                                 None
                                             }
                                         };
@@ -2065,7 +2062,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         match selections {
                                             Some((selected_indicies, true, cards_owed)) => {
                                                 //Convert
-
                                                 for &pips in
                                                     vec![Pips::Three, Pips::Two, Pips::One].iter()
                                                 {
@@ -2153,15 +2149,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         None
                                     }
                                 } else {
-                                    let mut spaces: Vec<_> =
-                                        get_all_spaces_occupied_by(board, colour)
-                                            .iter()
-                                            .cloned()
-                                            .collect();
-
-                                    //the cpu's choices should be a function of the rng
-                                    spaces.sort();
-
+                                    let spaces = get_all_spaces_occupied_by(board, colour);
 
                                     rng.choose(&spaces).and_then(
                                         |key| if is_space_movable(board, key) {
@@ -2359,25 +2347,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 }
 
 fn occupied_by_or_adjacent_spaces(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
-    let mut result: Vec<(i8, i8)> = {
-        let mut set = get_all_spaces_occupied_by(board, colour);
+    let mut set = get_all_spaces_occupied_by_set(board, colour);
 
-        let initial_keys: Vec<(i8, i8)> = set.iter().cloned().collect();
+    let initial_keys: Vec<(i8, i8)> = set.iter().cloned().collect();
 
-        for key in initial_keys {
-            set.extend(
-                FOUR_WAY_OFFSETS
-                    .iter()
-                    .map(|&(x, y)| (x + key.0, y + key.1)),
-            );
-        }
+    for key in initial_keys {
+        set.extend(
+            FOUR_WAY_OFFSETS
+                .iter()
+                .map(|&(x, y)| (x + key.0, y + key.1)),
+        );
+    }
 
-        set.into_iter().collect()
-    };
-    //we want the order to be a function of the random seed
-    result.sort();
-
-    result
+    set_to_vec(set)
 }
 
 //a cheesy way to do an outline
@@ -2767,10 +2749,13 @@ fn get_valid_move_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> 
     result
 }
 
-fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+fn get_all_build_targets(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
+    set_to_vec(get_all_build_targets_set(board, colour))
+}
+fn get_all_build_targets_set(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
-    let occupied_spaces = get_all_spaces_occupied_by(board, colour);
+    let occupied_spaces = get_all_spaces_occupied_by_set(board, colour);
 
     for &(x, y) in occupied_spaces.iter() {
         for &(dx, dy) in FOUR_WAY_OFFSETS.iter() {
@@ -2784,7 +2769,10 @@ fn get_all_build_targets(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)
     result
 }
 
-fn get_all_hatch_targets(board: &Board) -> HashSet<(i8, i8)> {
+fn get_all_hatch_targets(board: &Board) -> Vec<(i8, i8)> {
+    set_to_vec(get_all_hatch_targets_set(board))
+}
+fn get_all_hatch_targets_set(board: &Board) -> HashSet<(i8, i8)> {
     let mut result = HashSet::new();
 
     for &(x, y) in board.keys() {
@@ -2799,7 +2787,20 @@ fn get_all_hatch_targets(board: &Board) -> HashSet<(i8, i8)> {
     result
 }
 
-fn get_all_spaces_occupied_by(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
+fn get_all_spaces_occupied_by(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
+    set_to_vec(get_all_spaces_occupied_by_set(board, colour))
+}
+
+fn set_to_vec(set: HashSet<(i8, i8)>) -> Vec<(i8, i8)> {
+    let mut result: Vec<_> = set.iter().cloned().collect();
+
+    //we want the chosen results to be a function only our rng, not the HashSet's internal one
+    result.sort();
+
+    result
+}
+
+fn get_all_spaces_occupied_by_set(board: &Board, colour: PieceColour) -> HashSet<(i8, i8)> {
     board
         .iter()
         .filter_map(|(key, space)| if space_occupied_by(space, colour) {

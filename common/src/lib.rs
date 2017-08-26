@@ -241,6 +241,34 @@ impl Stash {
     }
 }
 
+#[cfg(test)]
+mod stash_tests {
+    use ::*;
+
+    #[test]
+    fn remove() {
+        let mut stash = Stash::full(PieceColour::Red);
+
+        assert_eq!(stash[Pips::One], ThreeLeft);
+
+        stash.remove(Pips::One);
+
+        assert_eq!(stash[Pips::One], TwoLeft);
+
+        stash.remove(Pips::One);
+
+        assert_eq!(stash[Pips::One], OneLeft);
+
+        stash.remove(Pips::One);
+
+        assert_eq!(stash[Pips::One], NoneLeft);
+
+        stash.remove(Pips::One);
+
+        assert_eq!(stash[Pips::One], NoneLeft);
+    }
+}
+
 const STASH_MAX: u8 = 9;
 
 use std::ops::{Index, IndexMut};
