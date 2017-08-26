@@ -1294,14 +1294,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         stash.add(piece);
                     }
 
-                    card_index_1.map(|i| hand.remove(i));
-                    card_index_2.map(|i| hand.remove(i));
-                    card_index_3.map(|i| hand.remove(i));
+
+                    let pile = &mut state.pile;
+                    card_index_1.map(|i| pile.push(hand.remove(i)));
+                    card_index_2.map(|i| pile.push(hand.remove(i)));
+                    card_index_3.map(|i| pile.push(hand.remove(i)));
 
                     for _ in 0..cards_owed {
-                        if let Some(card) =
-                            deal_parts(&mut state.deck, &mut state.pile, &mut state.rng)
-                        {
+                        if let Some(card) = deal_parts(&mut state.deck, pile, &mut state.rng) {
                             hand.push(card);
                         }
                     }
@@ -1393,13 +1393,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             let hand = &mut state.player_hand;
 
-                            card_index_1.map(|i| hand.remove(i));
-                            card_index_2.map(|i| hand.remove(i));
-                            card_index_3.map(|i| hand.remove(i));
+                            let pile = &mut state.pile;
+                            card_index_1.map(|i| pile.push(hand.remove(i)));
+                            card_index_2.map(|i| pile.push(hand.remove(i)));
+                            card_index_3.map(|i| pile.push(hand.remove(i)));
 
                             for _ in 0..cards_owed {
                                 if let Some(card) =
-                                    deal_parts(&mut state.deck, &mut state.pile, &mut state.rng)
+                                    deal_parts(&mut state.deck, pile, &mut state.rng)
                                 {
                                     hand.push(card);
                                 }
@@ -1525,6 +1526,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             if let Some(key) = target_space_coords {
                 if fly_from_targets.contains(&key) {
                     state.board.insert(key, space);
+
+                    state.pile.push(ace);
 
                     state.turn = Discard;
                 }
@@ -2077,7 +2080,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                 *old_piece = stash_piece;
 
                                                                 for i in selected_indicies {
-                                                                    hand.remove(i);
+                                                                    state.pile.push(hand.remove(i));
                                                                 }
 
                                                                 for _ in 0..cards_owed {
@@ -2106,7 +2109,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 }
 
                                                 for i in selected_indicies {
-                                                    hand.remove(i);
+                                                    state.pile.push(hand.remove(i));
                                                 }
 
                                                 for _ in 0..cards_owed {
@@ -2169,7 +2172,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                                 if let Some(key) = target_space_coords {
                                     if let Some(ace_index) = rng.choose(&ace_indicies) {
-                                        hand.remove(*ace_index);
+                                        state.pile.push(hand.remove(*ace_index));
 
                                         state.board.insert(*key, space);
 
@@ -2342,6 +2345,90 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         },
         _ => {}
     };
+
+    if cfg!(debug_assertions) {
+        let mut all_cards = Vec::new();
+
+        all_cards.extend(state.player_hand.iter().cloned());
+
+        for hand in state.cpu_hands.iter() {
+            all_cards.extend(hand.iter().cloned());
+        }
+
+        all_cards.extend(state.deck.iter().cloned());
+        all_cards.extend(state.pile.iter().cloned());
+
+        let mut over_okay = false;
+
+        match state.turn {
+            FirstRound(starter_cards, _) | FirstRoundPlayer(starter_cards) => {
+                all_cards.push(starter_cards.player_card.clone());
+
+                for possible_card in starter_cards.cpu_cards.iter() {
+                    if let Some(card) = *possible_card {
+                        all_cards.push(card);
+                    }
+                }
+
+                over_okay = true;
+            }
+            BuildSelect(card, _) |
+            FlySelectCarpet(card, _) |
+            FlySelect(_, _, card, _) |
+            HatchSelect(card, _) => {
+                all_cards.push(card);
+            }
+            _ => {}
+        }
+
+        for space in state.board.values() {
+            all_cards.push(space.card.clone());
+        }
+
+        all_cards.sort();
+
+        let fresh_deck = Card::all_values();
+
+        if over_okay {
+            assert!(all_cards.len() >= fresh_deck.len());
+        } else {
+            assert_eq!(
+                all_cards,
+                fresh_deck,
+                "
+                all_cards.len():{:?}
+                fresh_deck.len():{:?}
+                diff :{:?}",
+                all_cards.len(),
+                fresh_deck.len(),
+                {
+                    let mut diff = Vec::new();
+
+                    let (shorter, longer) = if all_cards.len() > fresh_deck.len() {
+                        (&fresh_deck, &all_cards)
+                    } else {
+                        (&all_cards, &fresh_deck)
+                    };
+
+                    for i in 0..longer.len() {
+                        match (shorter.get(i), longer.get(i)) {
+                            (Some(c1), Some(c2)) if c1 == c2 => {}
+                            (Some(_), Some(c2)) => {
+                                diff.push(c2);
+                            }
+                            (Some(c), None) | (None, Some(c)) => {
+                                diff.push(c);
+                            }
+                            (None, None) => {}
+                        }
+                    }
+
+                    diff
+                }
+            );
+        }
+    }
+
 
     false
 }
