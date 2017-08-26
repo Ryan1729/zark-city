@@ -1731,6 +1731,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 'turn: loop {
                     //TODO better "AI". Evaluate every use of rng in this match statement
                     let turn_option = if let Some(plan) = possible_plan {
+                        if cfg!(debug_assertions) {
+                            println!("plan is {:?}", plan);
+                        }
                         match plan {
                             Plan::Fly(_) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
@@ -1738,7 +1741,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Hatch(_) => 7,
                         }
                     } else {
-                        rng.gen_range(0, 8)
+                        if cfg!(debug_assertions) {
+                            let x = rng.gen_range(0, 8);
+                            println!("randomly chose {:?}", x);
+
+                            x
+                        } else {
+                            rng.gen_range(0, 8)
+                        }
                     };
 
                     match turn_option {
@@ -1817,10 +1827,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             number_cards.sort();
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
-                                let build_targets: Vec<_> =
+                                let mut build_targets: Vec<_> =
                                     get_all_build_targets(&state.board, colour)
                                         .into_iter()
                                         .collect();
+
+                                build_targets.sort();
 
                                 if let Some(&key) = rng.choose(&build_targets) {
                                     state.board.insert(
@@ -2185,23 +2197,27 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             let no_pieces_on_board = stash.is_full();
                             if no_pieces_on_board {
-                                let number_cards: Vec<_> = hand.iter()
+                                let mut number_cards: Vec<_> = hand.iter()
                                     .enumerate()
                                     .filter(|&(_, c)| c.is_number())
                                     .map(|(i, _)| i)
                                     .collect();
+
+                                number_cards.sort();
 
                                 if let Some(&card_index) = rng.choose(&number_cards) {
                                     let target_space_coords =
                                         if let Some(Plan::Hatch(target)) = possible_plan {
                                             Some(target)
                                         } else {
-                                            let hatch_targets: Vec<
-                                        (i8, i8),
-                                    > = get_all_hatch_targets(&state.board)
-                                        .iter()
-                                        .cloned()
-                                        .collect();
+                                            let mut hatch_targets: Vec<
+                                                (i8, i8),
+                                            > = get_all_hatch_targets(&state.board)
+                                                .iter()
+                                                .cloned()
+                                                .collect();
+
+                                            hatch_targets.sort();
 
                                             rng.choose(&hatch_targets).cloned()
                                         };
