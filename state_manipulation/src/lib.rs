@@ -1955,13 +1955,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 if result.is_none() {
                                     let mut pieces = Vec::new();
 
-                                    let mut colours = Vec::new();
-
-                                    colours.push(stashes.player_stash.colour);
-
-                                    for stash in stashes.cpu_stashes.iter() {
-                                        colours.push(stash.colour);
-                                    }
+                                    let mut colours = active_colours(stashes);
 
                                     colours.sort_by_key(|c| stashes[*c].used_count());
 
@@ -2072,11 +2066,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                         if let Some(stash_piece) =
                                                             stashes[colour].remove(pips)
                                                         {
-                                                            stashes[piece.colour].add(piece);
-
                                                             if let Some(old_piece) =
                                                                 space.pieces.get_mut(piece_index)
                                                             {
+                                                                stashes[old_piece.colour]
+                                                                    .add(*old_piece);
+
                                                                 *old_piece = stash_piece;
 
                                                                 for i in selected_indicies {
@@ -2184,7 +2179,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         7 => {
                             //Hatch
 
-                            let mut stash = stashes[colour];
+                            let stash = &mut stashes[colour];
 
                             let no_pieces_on_board = stash.is_full();
                             if no_pieces_on_board {
@@ -2291,7 +2286,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     };
 
-
     //draw the hud here so the layering is correct
     (p.draw_layer)(1, state.hud_alpha);
 
@@ -2347,6 +2341,35 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     };
 
     if cfg!(debug_assertions) {
+        fn diff<T: Copy + PartialEq>(a: &Vec<T>, b: &Vec<T>) -> Vec<T> {
+            let mut diff = Vec::new();
+
+            let (shorter, longer) = if a.len() > b.len() {
+                (&b, &a)
+            } else {
+                (&a, &b)
+            };
+
+            for i in 0..longer.len() {
+                match (shorter.get(i), longer.get(i)) {
+                    (Some(c1), Some(c2)) if c1 == c2 => {}
+                    (Some(_), Some(c2)) => {
+                        diff.push(*c2);
+                    }
+                    (Some(c), None) | (None, Some(c)) => {
+                        diff.push(*c);
+                    }
+                    (None, None) => {}
+                }
+            }
+
+            diff
+        }
+
+        ////////////////////
+        //    card check  //
+        ////////////////////
+
         let mut all_cards = Vec::new();
 
         all_cards.extend(state.player_hand.iter().cloned());
@@ -2401,32 +2424,79 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 diff :{:?}",
                 all_cards.len(),
                 fresh_deck.len(),
-                {
-                    let mut diff = Vec::new();
-
-                    let (shorter, longer) = if all_cards.len() > fresh_deck.len() {
-                        (&fresh_deck, &all_cards)
-                    } else {
-                        (&all_cards, &fresh_deck)
-                    };
-
-                    for i in 0..longer.len() {
-                        match (shorter.get(i), longer.get(i)) {
-                            (Some(c1), Some(c2)) if c1 == c2 => {}
-                            (Some(_), Some(c2)) => {
-                                diff.push(c2);
-                            }
-                            (Some(c), None) | (None, Some(c)) => {
-                                diff.push(c);
-                            }
-                            (None, None) => {}
-                        }
-                    }
-
-                    diff
-                }
+                diff(&all_cards, &fresh_deck)
             );
         }
+
+        ////////////////////
+        //   piece check  //
+        ////////////////////
+
+        let colours = active_colours(&state.stashes);
+
+        let mut all_pieces = Vec::new();
+
+        for &colour in colours.iter() {
+            let stash = &state.stashes[colour];
+
+            for pips in Pips::all_values() {
+                match stash[pips] {
+                    NoneLeft => {}
+                    OneLeft => {
+                        all_pieces.push(Piece { colour, pips });
+                    }
+                    TwoLeft => {
+                        all_pieces.push(Piece { colour, pips });
+                        all_pieces.push(Piece { colour, pips });
+                    }
+                    ThreeLeft => {
+                        all_pieces.push(Piece { colour, pips });
+                        all_pieces.push(Piece { colour, pips });
+                        all_pieces.push(Piece { colour, pips });
+                    }
+                }
+            }
+        }
+
+
+        for space in state.board.values() {
+            for piece in space.pieces.clone().into_iter() {
+                all_pieces.push(piece);
+            }
+        }
+
+        match state.turn {
+            MoveSelect(_, _, piece) => {
+                all_pieces.push(piece);
+            }
+            _ => {}
+        }
+
+        all_pieces.sort();
+
+        let mut one_of_each = Piece::all_values();
+
+        one_of_each.retain(|p| colours.contains(&p.colour));
+
+        let mut expected = Vec::new();
+
+        for piece in one_of_each {
+            expected.push(piece);
+            expected.push(piece);
+            expected.push(piece);
+        }
+
+        assert_eq!(
+            all_pieces,
+            expected,
+            "
+            all_pieces.len():{:?}
+            expected.len():{:?}
+            diff :{:?}",
+            all_pieces.len(),
+            expected.len(),
+            diff(&all_pieces, &expected)
+        );
     }
 
 
@@ -3776,4 +3846,16 @@ fn first_round_targets(board: &Board) -> HashSet<(i8, i8)> {
     }
 
     result
+}
+
+fn active_colours(stashes: &Stashes) -> Vec<PieceColour> {
+    let mut colours = Vec::new();
+
+    colours.push(stashes.player_stash.colour);
+
+    for stash in stashes.cpu_stashes.iter() {
+        colours.push(stash.colour);
+    }
+
+    colours
 }

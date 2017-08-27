@@ -181,7 +181,7 @@ impl IndexMut<PieceColour> for Stashes {
 
 
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug)]
 pub struct Stash {
     pub colour: PieceColour,
     pub one_pip: PiecesLeft,
@@ -554,7 +554,7 @@ impl Rand for Space {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Piece {
     pub colour: PieceColour,
     pub pips: Pips,
@@ -576,7 +576,7 @@ impl AllValues for Piece {
 
 all_values_rand_impl!(Piece);
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy,  PartialEq, Eq, PartialOrd, Ord)]
 pub enum PieceColour {
     Red,
     Yellow,
