@@ -1185,7 +1185,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             }
                         }
                         if let SelectCardFromHand(index) = action {
-                            //TODO better way to signal when there are too many cards?
                             match (
                                 card_index_1.and_then(|i| hand.get(i)),
                                 card_index_2.and_then(|i| hand.get(i)),
@@ -1855,43 +1854,36 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         5 => {
                             //Convert/Demolish
-                            let chosen_enemy_piece = {
+                            let chosen_enemy_pieces = {
                                 let spaces: Vec<(i8, i8)> =
                                     occupied_by_or_adjacent_spaces(&state.board, colour);
 
 
-                                let mut result: Option<
+                                let mut result: Vec<
                                     ((i8, i8), usize),
-                                > = None;
+                                > = vec![];
 
                                 if let Some(Plan::ConvertSlashDemolish(space_coords, piece_index))
                                     = possible_plan {
                                     if let Some(space) = state.board.get(&space_coords) {
                                         if space.pieces.get(piece_index).is_some() {
-                                            result = Some((space_coords, piece_index));
+                                            result = vec![(space_coords, piece_index)];
                                         }
                                     }
                                 }
 
-                                if result.is_none() {
+                                if result.len() == 0 {
                                     let mut pieces = Vec::new();
 
                                     let mut colours = active_colours(stashes);
 
                                     colours.sort_by_key(|c| stashes[*c].used_count());
 
-                                    //TODO does it ever make sense to
-                                    //convert or demolish your own piece?
-                                    //if not then why push the player colour
-                                    //on in the first place?
                                     colours.retain(|c| *c != colour);
 
                                     for &target_colour in colours.pop().iter() {
                                         for key in spaces.iter() {
                                             if let Some(space) = state.board.get(key) {
-                                                //TODO choose largest size than we cn pay for,
-                                                //possbily prioritizing conversion over size?
-
                                                 pieces.extend(
                                                     space
                                                         .pieces
@@ -1899,19 +1891,40 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                             |piece| piece.colour == target_colour,
                                                         )
                                                         .iter()
-                                                        .map(|i| (*key, *i)),
+                                                        .filter_map(|&i| {
+                                                            space
+                                                                .pieces
+                                                                .get(i)
+                                                                .map(|p| ((*key, i), p.pips))
+                                                        }),
                                                 );
                                             }
                                         }
                                     }
 
-                                    result = rng.choose(&pieces).cloned()
+                                    let stash = &stashes[colour];
+                                    let mut available_sizes = Pips::all_values();
+
+                                    available_sizes.retain(|&pips| stash[pips] != NoneLeft);
+
+                                    type Pair = (((i8, i8), usize), Pips);
+
+                                    let (convertable, not_convertable): (Vec<Pair>, Vec<Pair>) =
+                                        pieces.iter().partition(|&&(_, pips)|
+                                            available_sizes.contains(&pips)
+                                    );
+
+                                    result = convertable
+                                        .iter()
+                                        .chain(not_convertable.iter())
+                                        .map(|pair| pair.0)
+                                        .collect();
                                 }
 
                                 result
                             };
 
-                            if let Some((space_coords, piece_index)) = chosen_enemy_piece {
+                            for (space_coords, piece_index) in chosen_enemy_pieces {
                                 if let Some(space) = state.board.get_mut(&space_coords) {
                                     if let Some(piece) = space.pieces.get(piece_index).clone() {
                                         let pips_needed = u8::from(piece.pips);
@@ -1920,9 +1933,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                             //TODO we might want to save particular cards to make a
                                             // power block etc.
                                             let mut card_choices :Vec<_> = hand.iter()
-                                            .enumerate()
-                                            .filter(|&(_, c)| !c.is_number())
-                                            .collect();
+                                                .enumerate()
+                                                .filter(|&(_, c)| !c.is_number())
+                                                .collect();
 
                                             card_choices.sort_by(|&(_, a), &(_, b)| {
                                                 pip_value(&a).cmp(&pip_value(&b))
@@ -2044,7 +2057,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         };
                                     }
                                 };
-                            };
+                            }
                         }
                         6 => {
                             //Fly
