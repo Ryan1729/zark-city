@@ -3840,7 +3840,7 @@ fn get_plan(
 
         rng.shuffle(&mut completable_power_block_targets);
 
-        let mut disruption_targets: Vec<(i8, i8)> = power_block_targets
+        let disruption_targets: Vec<(i8, i8)> = power_block_targets
             .into_iter()
             .chain(completable_power_block_targets)
             .collect();
@@ -3882,11 +3882,24 @@ fn get_plan(
 
                 if let Some(pip_max) = highest_pip_target {
                     let possible_target_piece = board.get(&target).and_then(|space| {
+                        //It's contested enough if it won't be taken for at least one round.
+                        let contested_enough = {
+                            let counts = PieceColour::all_values()
+                                .into_iter()
+                                .map(|c| space.pieces.filtered_indicies(|p| p.colour == c).len());
+
+                            counts.filter(|&n| n >= 2).count() >= 2
+                        };
+
+                        if contested_enough {
+                            return None;
+                        }
+
                         let other_player_pieces = space.pieces.filtered_indicies(
                             |p| p.colour != colour && u8::from(p.pips) <= pip_max,
                         );
 
-                        //TODO how should we pick whihc colour to target?
+                        //TODO how should we pick which colour to target?
                         rng.choose(&other_player_pieces).cloned()
                     });
                     if let Some(target_piece) = possible_target_piece {
