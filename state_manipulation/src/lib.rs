@@ -2312,10 +2312,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 over_okay = true;
             }
-            BuildSelect(card, _) |
-            FlySelectCarpet(card, _) |
-            FlySelect(_, _, card, _) |
-            HatchSelect(card, _) => {
+            BuildSelect(card, _) | FlySelectCarpet(card, _) | HatchSelect(card, _) => {
+                all_cards.push(card);
+            }
+            FlySelect(_, space, card, _) => {
+                all_cards.push(space.card);
                 all_cards.push(card);
             }
             _ => {}
@@ -2386,6 +2387,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             MoveSelect(_, _, piece) => {
                 all_pieces.push(piece);
             }
+            FlySelect(_, space, _, _) => for piece in space.pieces.clone().into_iter() {
+                all_pieces.push(piece);
+            },
             _ => {}
         }
 
