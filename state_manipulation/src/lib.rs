@@ -3797,7 +3797,7 @@ fn get_plan(
     rng: &mut StdRng,
     colour: PieceColour,
 ) -> Option<Plan> {
-    let possible_disruption_target = {
+    let disruption_targets = {
         let mut completable_power_blocks = completable_power_blocks(board);
 
         completable_power_blocks.retain(|completable| {
@@ -3827,17 +3827,19 @@ fn get_plan(
         disruption_targets.sort();
         disruption_targets.dedup();
 
-        //TODO should we select the easiestto disrupt one,
-        // or the one that seems like it is closes to being done?
+        //TODO sort complete blocks first
 
-        rng.choose(&disruption_targets).cloned()
+        rng.shuffle(&mut disruption_targets);
+
+        disruption_targets
     };
 
-    possible_disruption_target.and_then(|target| {
+    for target in disruption_targets {
         let occupys_target = is_occupied_by(&board, &target, colour);
+        let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
-        if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
-            Some(Plan::Fly(target))
+        if occupys_target && has_ace {
+            return Some(Plan::Fly(target));
         } else {
             let adjacent_keys: Vec<_> = {
                 let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
@@ -3854,29 +3856,161 @@ fn get_plan(
                 .iter()
                 .any(|key| is_occupied_by(&board, key, colour));
 
-            if adjacent_to_target || occupys_target {
-                let possible_target_piece = board.get(&target).and_then(|space| {
-                    let other_player_pieces =
-                        space.pieces.filtered_indicies(|p| p.colour != colour);
 
-                    //TODO how should we pick whihc colour to target?
-                    rng.choose(&other_player_pieces).cloned()
-                });
-                if let Some(target_piece) = possible_target_piece {
-                    return Some(Plan::ConvertSlashDemolish(target, target_piece));
+            if adjacent_to_target || occupys_target {
+                let highest_pip_target: Option<u8> =
+                    hand.iter()
+                        .fold(None, |acc, card| match (acc, pip_value(&card)) {
+                            (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
+                            (None, pip_value) if pip_value == 0 => None,
+                            (None, pip_value) => Some(pip_value),
+                        });
+
+                if let Some(pip_max) = highest_pip_target {
+                    let possible_target_piece = board.get(&target).and_then(|space| {
+                        let other_player_pieces = space.pieces.filtered_indicies(
+                            |p| p.colour != colour && u8::from(p.pips) <= pip_max,
+                        );
+
+                        //TODO how should we pick whihc colour to target?
+                        rng.choose(&other_player_pieces).cloned()
+                    });
+                    if let Some(target_piece) = possible_target_piece {
+                        return Some(Plan::ConvertSlashDemolish(target, target_piece));
+                    }
                 }
-            }
+            };
 
             if adjacent_to_target {
-                Some(Plan::Move(target))
+                return Some(Plan::Move(target));
             } else if stashes[colour].is_full() {
-                adjacent_keys
+                let possible_plan = adjacent_keys
                     .iter()
                     .find(|key| !board.contains_key(key))
-                    .map(|target_blank| Plan::Hatch(*target_blank))
+                    .map(|target_blank| Plan::Hatch(*target_blank));
+                if possible_plan.is_some() {
+                    return possible_plan;
+                }
+            }
+        };
+    }
+
+    None
+}
+
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+
+#[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
+mod plan_tests {
+    use ::*;
+    use common::PieceColour::*;
+    use common::Suit::*;
+    use common::Value::*;
+
+    quickcheck! {
+        fn move_in_and_hope(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Green,
+                    pips: Pips::One,
+                });
+                pieces.insert(1, Piece {
+                    colour: Green,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,0), Space {
+                        card: Card {
+                            suit: Clubs,
+                            value: Two,
+                        },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Green,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,1), Space {
+                    card: Card {
+                        suit: Spades,
+                        value: Two,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                let mut pieces: SpacePieces = Default::default();
+
+                board.insert((0,-1), Space {
+                    card: Card {
+                        suit: Diamonds,
+                        value: Two,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((-1,0), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Move((0,0))) = plan {
+                true
             } else {
-                None
+                false
             }
         }
-    })
+    }
 }

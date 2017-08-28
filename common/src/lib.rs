@@ -148,7 +148,6 @@ impl Index<PieceColour> for Stashes {
     type Output = Stash;
 
     fn index<'a>(&'a self, colour: PieceColour) -> &'a Stash {
-
         if self.player_stash.colour == colour {
             return &self.player_stash;
         } else {
@@ -235,9 +234,7 @@ impl Stash {
     }
 
     pub fn used_count(&self) -> u8 {
-        STASH_MAX - u8::from(self.one_pip)
-         - u8::from(self.two_pip)
-          - u8::from(self.three_pip)
+        STASH_MAX - u8::from(self.one_pip) - u8::from(self.two_pip) - u8::from(self.three_pip)
     }
 }
 
@@ -532,7 +529,6 @@ impl Space {
             card,
             ..Default::default()
         }
-
     }
 }
 impl Rand for Space {
@@ -576,7 +572,7 @@ impl AllValues for Piece {
 
 all_values_rand_impl!(Piece);
 
-#[derive(Debug, Clone, Copy,  PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PieceColour {
     Red,
     Yellow,
@@ -1164,6 +1160,7 @@ pub fn arrow_id(card_id: UiId, forward: bool) -> UiId {
 extern crate quickcheck;
 
 #[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod id_tests {
     use ::*;
 
@@ -1307,7 +1304,7 @@ fn can_fly_helper(
     false
 }
 
-pub const FOUR_WAY_OFFSETS: [(i8, i8); 4]  = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+pub const FOUR_WAY_OFFSETS: [(i8, i8); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
 pub const EIGHT_WAY_OFFSETS: [(i8, i8); 8] = [
     (1, 0),
@@ -1377,7 +1374,6 @@ mod card_tests {
                 },
             ]
         )
-
     }
 }
 
@@ -1441,6 +1437,7 @@ mod mat4x4_tests {
         }
     }
 
+    #[cfg_attr(rustfmt, rustfmt_skip)]
     quickcheck! {
         fn projection_inversion(mat4x4: Mat4x4, spec_: ProjectionSpec) -> bool {
             let m = mat4x4.m;
