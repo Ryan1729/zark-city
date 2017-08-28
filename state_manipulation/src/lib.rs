@@ -1667,12 +1667,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                     } else {
                         if cfg!(debug_assertions) {
-                            let x = rng.gen_range(0, 8);
+                            let x = *rng.choose(&vec![0, 1, 2, 3, 4, 5, 7]).unwrap_or(&0);
                             println!("randomly chose {:?}", x);
 
                             x
                         } else {
-                            rng.gen_range(0, 8)
+                            *rng.choose(&vec![0, 1, 2, 3, 4, 5, 7]).unwrap_or(&0)
                         }
                     };
 
