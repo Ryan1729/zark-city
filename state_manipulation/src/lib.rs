@@ -1647,91 +1647,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     hand.push(card);
                 }
 
-                let possible_disruption_target = {
-                    let mut completable_power_blocks = completable_power_blocks(&state.board);
-
-                    completable_power_blocks.retain(|completable| {
-                        let has_card_to_complete: bool = match completable.completion {
-                            Unique(suit, value) => hand.contains(&Card { suit, value }),
-                            ValueMatch(v) => hand.iter().any(|c| v == c.value),
-                            SuitedEnds(suit, (v1, v2)) => {
-                                hand.contains(&Card { suit, value: v1 }) ||
-                                    hand.contains(&Card { suit, value: v2 })
-                            }
-                        };
-
-                        !has_card_to_complete
-                    });
-
-                    let disruption_targets: Vec<(i8, i8)> = completable_power_blocks
-                        .iter()
-                        .flat_map(|completable| completable.keys.iter().cloned())
-                        .collect();
-
-                    //TODO should we select the easiestto disrupt one,
-                    // or the one that seems like it is closes to being done?
-
-                    rng.choose(&disruption_targets).cloned()
-                };
-
-                #[derive(Copy, Clone, Debug)]
-                enum Plan {
-                    Fly((i8, i8)),
-                    ConvertSlashDemolish((i8, i8), usize),
-                    Move((i8, i8)),
-                    Hatch((i8, i8)),
-                }
-
-                let mut possible_plan: Option<Plan> = {
-                    let board = &state.board;
-
-                    possible_disruption_target.and_then(|target| {
-                        let occupys_target = is_occupied_by(&board, &target, colour);
-
-                        if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
-                            Some(Plan::Fly(target))
-                        } else {
-                            let adjacent_keys: Vec<_> = {
-                                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
-                                    .iter()
-                                    .map(|&(x, y)| (x + target.0, y + target.1))
-                                    .collect();
-
-                                rng.shuffle(&mut adjacent_keys);
-
-                                adjacent_keys
-                            };
-
-                            let adjacent_to_target = adjacent_keys
-                                .iter()
-                                .any(|key| is_occupied_by(&board, key, colour));
-
-                            if adjacent_to_target || occupys_target {
-                                let possible_target_piece = board.get(&target).and_then(|space| {
-                                    let other_player_pieces =
-                                        space.pieces.filtered_indicies(|p| p.colour != colour);
-
-                                    //TODO how should we pick whihc colour to target?
-                                    rng.choose(&other_player_pieces).cloned()
-                                });
-                                if let Some(target_piece) = possible_target_piece {
-                                    return Some(Plan::ConvertSlashDemolish(target, target_piece));
-                                }
-                            }
-
-                            if adjacent_to_target {
-                                Some(Plan::Move(target))
-                            } else if stashes[colour].is_full() {
-                                adjacent_keys
-                                    .iter()
-                                    .find(|key| !board.contains_key(key))
-                                    .map(|target_blank| Plan::Hatch(*target_blank))
-                            } else {
-                                None
-                            }
-                        }
-                    })
-                };
+                let mut possible_plan: Option<Plan> =
+                    get_plan(&state.board, stashes, &hand, rng, colour);
 
                 'turn: loop {
                     //TODO better "AI". Evaluate every use of rng in this match statement
@@ -3858,4 +3775,104 @@ fn active_colours(stashes: &Stashes) -> Vec<PieceColour> {
     }
 
     colours
+}
+
+
+#[derive(Copy, Clone, Debug)]
+enum Plan {
+    Fly((i8, i8)),
+    ConvertSlashDemolish((i8, i8), usize),
+    Move((i8, i8)),
+    Hatch((i8, i8)),
+}
+
+fn get_plan(
+    board: &Board,
+    stashes: &Stashes,
+    hand: &Vec<Card>,
+    rng: &mut StdRng,
+    colour: PieceColour,
+) -> Option<Plan> {
+    let possible_disruption_target = {
+        let mut completable_power_blocks = completable_power_blocks(board);
+
+        completable_power_blocks.retain(|completable| {
+            let has_card_to_complete: bool = match completable.completion {
+                Unique(suit, value) => hand.contains(&Card { suit, value }),
+                ValueMatch(v) => hand.iter().any(|c| v == c.value),
+                SuitedEnds(suit, (v1, v2)) => {
+                    hand.contains(&Card { suit, value: v1 }) ||
+                        hand.contains(&Card { suit, value: v2 })
+                }
+            };
+
+            !has_card_to_complete
+        });
+
+        let power_blocks: Vec<(i8, i8)> = power_blocks(board)
+            .into_iter()
+            .flat_map(|block| block_to_coords(block).to_vec().into_iter())
+            .collect();
+
+        let mut disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+            .iter()
+            .flat_map(|completable| completable.keys.iter().cloned())
+            .chain(power_blocks)
+            .collect();
+
+        disruption_targets.sort();
+        disruption_targets.dedup();
+
+        //TODO should we select the easiestto disrupt one,
+        // or the one that seems like it is closes to being done?
+
+        rng.choose(&disruption_targets).cloned()
+    };
+
+    possible_disruption_target.and_then(|target| {
+        let occupys_target = is_occupied_by(&board, &target, colour);
+
+        if occupys_target && hand.iter().filter(|c| c.value == Ace).count() > 0 {
+            Some(Plan::Fly(target))
+        } else {
+            let adjacent_keys: Vec<_> = {
+                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .collect();
+
+                rng.shuffle(&mut adjacent_keys);
+
+                adjacent_keys
+            };
+
+            let adjacent_to_target = adjacent_keys
+                .iter()
+                .any(|key| is_occupied_by(&board, key, colour));
+
+            if adjacent_to_target || occupys_target {
+                let possible_target_piece = board.get(&target).and_then(|space| {
+                    let other_player_pieces =
+                        space.pieces.filtered_indicies(|p| p.colour != colour);
+
+                    //TODO how should we pick whihc colour to target?
+                    rng.choose(&other_player_pieces).cloned()
+                });
+                if let Some(target_piece) = possible_target_piece {
+                    return Some(Plan::ConvertSlashDemolish(target, target_piece));
+                }
+            }
+
+            if adjacent_to_target {
+                Some(Plan::Move(target))
+            } else if stashes[colour].is_full() {
+                adjacent_keys
+                    .iter()
+                    .find(|key| !board.contains_key(key))
+                    .map(|target_blank| Plan::Hatch(*target_blank))
+            } else {
+                None
+            }
+        }
+    })
 }
