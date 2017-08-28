@@ -875,9 +875,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     next_participant(cpu_player_count(state), current_participant);
 
                 if current_participant == starter_cards.first {
-                    //TODO start at actual first participant instead of the player
-
-                    state.turn = DrawInitialCard;
+                    state.turn = CpuTurn(Some(current_participant));
                     break;
                 }
             }
@@ -915,9 +913,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 let next_participant = next_participant(cpu_player_count, Player);
                 if next_participant == starter_cards.first {
-                    //TODO start at actual first participant instead of the player
-
-                    state.turn = CpuTurn;
+                    state.turn = CpuTurn(Some(next_participant));
                 } else {
                     state.turn = FirstRound(starter_cards, next_participant);
                 }
@@ -1620,13 +1616,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     };
                 }
             } else {
-                state.turn = CpuTurn;
+                state.turn = CpuTurn(None);
             };
         }
 
-        CpuTurn => {
+        CpuTurn(set_participant) => {
             let cpu_player_count = cpu_player_count(state);
-            let mut current_participant = next_participant(cpu_player_count, Player);
+            let mut current_participant =
+                set_participant.unwrap_or(next_participant(cpu_player_count, Player));
 
 
             while current_participant != Player {
@@ -2257,7 +2254,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         DrawInitialCard |
         SelectTurnOption |
         Discard |
-        CpuTurn |
+        CpuTurn(_) |
         Over(_, _) => if escape_pressed {
             return true;
         },

@@ -103,7 +103,7 @@ pub enum Turn {
     Hatch,
     HatchSelect(Card, usize),
     Discard,
-    CpuTurn,
+    CpuTurn(Option<Participant>),
     Over(Participant, Option<Participant>),
 }
 
