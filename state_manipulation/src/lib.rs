@@ -1247,9 +1247,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         ) => {
             debug_assert!(cards_owed <= 2);
             let hand = &mut state.player_hand;
-            let stash = &mut state.stashes.player_stash;
+            let stashes = &mut state.stashes;
             if let Some(space) = state.board.get_mut(&space_coords) {
                 let can_convert = if let Some(piece) = space.pieces.get(piece_index) {
+                    let stash = &stashes.player_stash;
                     match piece.pips {
                         Pips::One => stash[Pips::One] != NoneLeft,
                         Pips::Two => stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft,
@@ -1291,7 +1292,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         mouse_button_state,
                     ) {
                     if let Some(piece) = space.pieces.remove(piece_index) {
-                        stash.add(piece);
+                        stashes[piece.colour].add(piece);
                     }
 
 
@@ -1346,6 +1347,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 if has_one && piece.pips == Pips::One {
                     selected_pips = Some(Pips::One);
+                }
+                if !has_one && has_two && piece.pips == Pips::Two {
+                    selected_pips = Some(Pips::Two);
+                }
+                if !has_one && !has_two && has_three && piece.pips == Pips::Three {
+                    selected_pips = Some(Pips::Three);
                 }
 
                 if has_one && piece.pips > Pips::One &&
@@ -3813,21 +3820,26 @@ fn get_plan(
             !has_card_to_complete
         });
 
-        let power_blocks: Vec<(i8, i8)> = power_blocks(board)
+        let mut power_block_targets: Vec<(i8, i8)> = power_blocks(board)
             .into_iter()
             .flat_map(|block| block_to_coords(block).to_vec().into_iter())
             .collect();
 
-        let mut disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+        power_block_targets.sort();
+        power_block_targets.dedup();
+
+        let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
             .flat_map(|completable| completable.keys.iter().cloned())
-            .chain(power_blocks)
             .collect();
 
-        disruption_targets.sort();
-        disruption_targets.dedup();
+        completable_power_block_targets.sort();
+        completable_power_block_targets.dedup();
 
-        //TODO sort complete blocks first
+        let mut disruption_targets: Vec<(i8, i8)> = power_block_targets
+            .into_iter()
+            .chain(completable_power_block_targets)
+            .collect();
 
         rng.shuffle(&mut disruption_targets);
 
