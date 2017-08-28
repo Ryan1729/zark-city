@@ -3828,6 +3828,8 @@ fn get_plan(
         power_block_targets.sort();
         power_block_targets.dedup();
 
+        rng.shuffle(&mut power_block_targets);
+
         let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
             .flat_map(|completable| completable.keys.iter().cloned())
@@ -3836,12 +3838,12 @@ fn get_plan(
         completable_power_block_targets.sort();
         completable_power_block_targets.dedup();
 
+        rng.shuffle(&mut completable_power_block_targets);
+
         let mut disruption_targets: Vec<(i8, i8)> = power_block_targets
             .into_iter()
             .chain(completable_power_block_targets)
             .collect();
-
-        rng.shuffle(&mut disruption_targets);
 
         disruption_targets
     };
