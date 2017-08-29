@@ -3186,7 +3186,20 @@ fn block_to_two_cards_and_a_blank(
 fn completable_power_blocks(board: &Board) -> Vec<CompletableBlock> {
     let mut result = Vec::new();
 
-    for &(x, y) in board.keys() {
+    let plain_keys: Vec<_> = board.keys().cloned().collect();
+
+    let mut keys: Vec<(i8, i8)> = Vec::new();
+
+    for key in plain_keys {
+        for &(x, y) in FOUR_WAY_OFFSETS.iter() {
+            keys.push((x + key.0, y + key.1));
+        }
+    }
+
+    keys.sort();
+    keys.dedup();
+
+    for (x, y) in keys {
         let horizontal = Horizontal(y, (x - 1, x, x + 1));
 
         if let Some(completable) = completable_power_block(board, horizontal) {
@@ -3906,7 +3919,7 @@ fn get_plan(
 
         disruption_targets
     };
-
+    println!("{:?}", disruption_targets);
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
 
@@ -4039,15 +4052,6 @@ fn get_plan(
 
             //TODO should this only happen on completable power blocks?
             //Walking there when you can't do anything about it seems pointless
-
-            if cfg!(debug_assertions) {
-                let occupys_target = is_occupied_by(&board, &target, colour);
-                let adjacent_to_target = adjacent_filled_keys
-                    .iter()
-                    .any(|key| is_occupied_by(&board, key, colour));
-
-                assert!(!(occupys_target || adjacent_to_target))
-            }
 
             for adjacent in adjacent_filled_keys.iter() {
                 for &(x, y) in FOUR_WAY_OFFSETS.iter() {
@@ -4265,7 +4269,7 @@ mod plan_tests {
             }
         }
 
-        fn move_in_towards_almost_power_block(seed: usize) -> bool {
+        fn move_towards_almost_power_block(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
 
@@ -4321,6 +4325,104 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             if let Some(Plan::Move((-1,0))) = plan {
+                true
+            } else {
+                false
+            }
+        }
+
+        fn move_towards_diagonal_almost_power_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(
+                    0,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+                pieces.insert(
+                    1,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+
+                board.insert(
+                    (1, 1),
+                    Space {
+                        card: Card {
+                            suit: Clubs,
+                            value: Two,
+                        },
+                        pieces,
+                        offset: 0,
+                    },
+                );
+            }
+            {
+                let pieces: SpacePieces = Default::default();
+
+                board.insert(
+                    (0, 0),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Two,
+                        },
+                        pieces,
+                        offset: 0,
+                    },
+                );
+            }
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((-1,0), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Move((0,0))) = plan {
                 true
             } else {
                 false
