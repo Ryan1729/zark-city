@@ -1626,7 +1626,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
             while current_participant != Player {
-                println!("current_participant: {:?}", current_participant);
+                if cfg!(debug_assertions) {
+                    println!(
+                        "current participant: {:?} ({:?})",
+                        current_participant,
+                        participant_to_colour(&state.stashes, current_participant)
+                    );
+                }
+
                 let (hand, colour, stashes) = match current_participant {
                     Player => {
                         debug_assert!(false, "Attempting to take player's turn");
@@ -2995,6 +3002,13 @@ fn draw_piece(
         piece_texture_spec,
         0,
     );
+}
+
+fn participant_to_colour(stashes: &Stashes, participant: Participant) -> Option<PieceColour> {
+    match participant {
+        Player => Some(stashes.player_stash.colour),
+        Cpu(i) => stashes.cpu_stashes.get(i).map(|s| s.colour),
+    }
 }
 
 fn colour_to_participant(stashes: &Stashes, colour: PieceColour) -> Option<Participant> {

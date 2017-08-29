@@ -1253,6 +1253,8 @@ pub fn fly_from_targets(board: &Board, from: &(i8, i8)) -> Vec<(i8, i8)> {
         }
     }
 
+    result.sort();
+
     result
         .iter()
         .filter_map(|k| if k == from { None } else { Some(*k) })
