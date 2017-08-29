@@ -2127,11 +2127,32 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         None
                                     }
                                 } else {
-                                    let fly_from_targets = fly_from_targets(&board, &old_coords);
-                                    //TODO if there is a Fly Plan then place
-                                    //it as far away as possible
-                                    //or in a place that helps the cpu player
-                                    rng.choose(&fly_from_targets).cloned()
+                                    let mut fly_from_targets =
+                                        fly_from_targets(&board, &old_coords);
+                                    if let Some(Plan::Fly(_)) = possible_plan {
+                                        //TODO check if there is a place that helps the cpu player
+                                        fly_from_targets.sort_by_key(|key| {
+                                            let adjacent_keys: Vec<_> = {
+                                                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                                                    .iter()
+                                                    .map(|&(x, y)| (x + key.0, y + key.1))
+                                                    .collect();
+
+                                                rng.shuffle(&mut adjacent_keys);
+
+                                                adjacent_keys
+                                            };
+
+                                            adjacent_keys
+                                                .iter()
+                                                .filter(|key| board.get(key).is_some())
+                                                .count()
+                                        });
+
+                                        fly_from_targets.pop()
+                                    } else {
+                                        rng.choose(&fly_from_targets).cloned()
+                                    }
                                 };
 
                                 if let Some(key) = target_space_coords {
