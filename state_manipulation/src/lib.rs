@@ -3910,7 +3910,7 @@ fn get_plan(
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
 
-    for target in disruption_targets {
+    for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
             //It's contested enough if it won't be taken for at least one round.
             let contested_enough = {
@@ -4020,7 +4020,49 @@ fn get_plan(
                     }
                 }
             }
-        };
+        }
+
+
+
+        for &target in disruption_targets.iter() {
+            let adjacent_filled_keys: Vec<_> = {
+                let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .filter(|key| board.get(key).is_some())
+                    .collect();
+
+                rng.shuffle(&mut adjacent_filled_keys);
+
+                adjacent_filled_keys
+            };
+
+            //TODO should this only happen on completable power blocks?
+            //Walking there when you can't do anything about it seems pointless
+
+            if cfg!(debug_assertions) {
+                let occupys_target = is_occupied_by(&board, &target, colour);
+                let adjacent_to_target = adjacent_filled_keys
+                    .iter()
+                    .any(|key| is_occupied_by(&board, key, colour));
+
+                assert!(!(occupys_target || adjacent_to_target))
+            }
+
+            for adjacent in adjacent_filled_keys.iter() {
+                for &(x, y) in FOUR_WAY_OFFSETS.iter() {
+                    println!(
+                        "move to adjacent {:?} from {:?}",
+                        adjacent,
+                        (x + adjacent.0, y + adjacent.1)
+                    );
+                    if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
+                        //TODO prefer moving pieces not on a power block
+                        return Some(Plan::Move(*adjacent));
+                    }
+                }
+            }
+        }
     }
 
     None
@@ -4036,7 +4078,7 @@ mod plan_tests {
     use common::PieceColour::*;
     use common::Suit::*;
 
-    fn green_vertical_power_block_board() -> Board {
+    fn green_vertical_almost_power_block_board() -> Board {
         let mut board = HashMap::new();
 
         {
@@ -4090,6 +4132,12 @@ mod plan_tests {
                 },
             );
         }
+
+        board
+    }
+    fn green_vertical_power_block_board() -> Board {
+        let mut board = green_vertical_almost_power_block_board();
+
         {
             let pieces: SpacePieces = Default::default();
 
@@ -4211,6 +4259,68 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             if let Some(Plan::FlySpecific((-1,2),_)) = plan {
+                true
+            } else {
+                false
+            }
+        }
+
+        fn move_in_towards_almost_power_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = green_vertical_almost_power_block_board();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((-2,0), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                board.insert((-1,0), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Five,
+                    },
+                    ..Default::default()
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Move((-1,0))) = plan {
                 true
             } else {
                 false
