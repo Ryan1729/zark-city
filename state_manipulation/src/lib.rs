@@ -3954,10 +3954,40 @@ fn get_plan(
             .flat_map(|block| block_to_coords(block).to_vec().into_iter())
             .collect();
 
+        let other_colour_occupation_count = |key: &(i8, i8)| {
+            let mut power_block_keys = Vec::new();
+
+            for block in power_blocks.iter() {
+                let coords = block_to_coords(*block);
+                if coords.contains(key) {
+                    power_block_keys.extend(coords.iter());
+                }
+            }
+
+            for block in completable_power_blocks.iter() {
+                if block.keys.contains(key) {
+                    power_block_keys.extend(block.keys.iter());
+                }
+            }
+
+            //how many of those spaces are occupied by other colours
+            let count = power_block_keys
+                .iter()
+                .filter(|key| {
+                    board
+                        .get(key)
+                        .and_then(|s| controller_colour(&s.pieces).map(|c| c != colour))
+                        .unwrap_or(false)
+                })
+                .count();
+
+            //put the highest count keys in front
+            <usize>::max_value() - count
+        };
+
         power_block_targets.sort();
         power_block_targets.dedup();
-
-        rng.shuffle(&mut power_block_targets);
+        power_block_targets.sort_by_key(&other_colour_occupation_count);
 
         let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
@@ -3966,8 +3996,7 @@ fn get_plan(
 
         completable_power_block_targets.sort();
         completable_power_block_targets.dedup();
-
-        rng.shuffle(&mut completable_power_block_targets);
+        completable_power_block_targets.sort_by_key(other_colour_occupation_count);
 
         let disruption_targets: Vec<(i8, i8)> = power_block_targets
             .into_iter()
@@ -3994,13 +4023,14 @@ fn get_plan(
 
         (disruption_targets, empty_disruption_targets)
     };
-    println!(
-        "disruption_targets {:?}",
-        disruption_targets
-            .iter()
-            .filter(|k| board.get(k).is_none())
-            .collect::<Vec<_>>()
-    );
+
+    if cfg!(debug_assertions) {
+        println!(
+            "disruption_targets {:?}, empty_disruption_targets: {:?}",
+            disruption_targets,
+            empty_disruption_targets
+        );
+    }
 
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
