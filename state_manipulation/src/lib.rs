@@ -1663,6 +1663,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Fly(_) | Plan::FlySpecific(_, _) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
                             Plan::Move(_) => 4,
+                            Plan::Build(_) => 3,
                             Plan::Hatch(_) => 7,
                         }
                     } else {
@@ -1745,8 +1746,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
                                 let build_targets = get_all_build_targets(&state.board, colour);
-
-                                if let Some(&key) = rng.choose(&build_targets) {
+                                let build_target = if let Some(Plan::Build(target)) = possible_plan
+                                {
+                                    if build_targets.contains(&target) {
+                                        Some(target)
+                                    } else {
+                                        possible_plan = None;
+                                        None
+                                    }
+                                } else {
+                                    rng.choose(&build_targets).cloned()
+                                };
+                                if let Some(key) = build_target {
                                     state.board.insert(
                                         key,
                                         Space {
@@ -2354,6 +2365,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         for i in 0..state.cpu_hands.len() {
             let hand = &state.cpu_hands[i];
             assert!(hand.len() <= 6, "Cpu({}) has {} cards!", i, hand.len());
+
             all_cards.extend(hand.iter().cloned());
         }
 
@@ -2985,22 +2997,38 @@ fn draw_piece(
     );
 }
 
-fn single_controller(stashes: &Stashes, board: &Board, block: Block) -> Option<Participant> {
-    if let Some(pieces_array) = block_to_pieces(board, block) {
-        let mut participant_iter = pieces_array
-            .iter()
-            .map(|pieces| controller(stashes, pieces));
+fn colour_to_participant(stashes: &Stashes, colour: PieceColour) -> Option<Participant> {
+    if stashes.player_stash.colour == colour {
+        Some(Player)
+    } else {
+        for i in 0..stashes.cpu_stashes.len() {
+            if stashes.cpu_stashes[i].colour == colour {
+                return Some(Cpu(i));
+            }
+        }
 
-        let possible_particpants: [Option<Participant>; 3] = [
-            participant_iter.next().and_then(id),
-            participant_iter.next().and_then(id),
-            participant_iter.next().and_then(id),
+        None
+    }
+}
+
+fn single_controller(stashes: &Stashes, board: &Board, block: Block) -> Option<Participant> {
+    single_controller_colour(board, block).and_then(|c| colour_to_participant(stashes, c))
+}
+
+fn single_controller_colour(board: &Board, block: Block) -> Option<PieceColour> {
+    if let Some(pieces_array) = block_to_pieces(board, block) {
+        let mut colour_iter = pieces_array.iter().map(controller_colour);
+
+        let possible_colours: [Option<PieceColour>; 3] = [
+            colour_iter.next().and_then(id),
+            colour_iter.next().and_then(id),
+            colour_iter.next().and_then(id),
         ];
 
         match (
-            possible_particpants[0],
-            possible_particpants[1],
-            possible_particpants[2],
+            possible_colours[0],
+            possible_colours[1],
+            possible_colours[2],
         ) {
             (Some(p1), Some(p2), Some(p3)) if p1 == p2 && p2 == p3 => Some(p1),
             _ => None,
@@ -3010,7 +3038,7 @@ fn single_controller(stashes: &Stashes, board: &Board, block: Block) -> Option<P
     }
 }
 
-fn controller(stashes: &Stashes, pieces: &SpacePieces) -> Option<Participant> {
+fn controller_colour(pieces: &SpacePieces) -> Option<PieceColour> {
     let mut possible_colour = None;
 
     for piece in pieces.into_iter() {
@@ -3023,17 +3051,7 @@ fn controller(stashes: &Stashes, pieces: &SpacePieces) -> Option<Participant> {
         }
     }
 
-    possible_colour.and_then(|colour| if stashes.player_stash.colour == colour {
-        Some(Player)
-    } else {
-        for i in 0..stashes.cpu_stashes.len() {
-            if stashes.cpu_stashes[i].colour == colour {
-                return Some(Cpu(i));
-            }
-        }
-
-        None
-    })
+    possible_colour
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3095,6 +3113,7 @@ fn power_blocks(board: &Board) -> Vec<Block> {
 struct CompletableBlock {
     keys: [(i8, i8); 2],
     completion: Completion,
+    completion_key: (i8, i8),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3106,7 +3125,7 @@ enum Completion {
 use Completion::*;
 
 fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlock> {
-    if let Some((keys, mut cards)) = block_to_two_cards_and_a_blank(board, block) {
+    if let Some((keys, mut cards, completion_key)) = block_to_two_cards_and_a_blank(board, block) {
         cards.sort();
 
         match (cards[0], cards[1]) {
@@ -3116,6 +3135,7 @@ fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlo
                 Some(CompletableBlock {
                     keys,
                     completion: ValueMatch(v1),
+                    completion_key,
                 })
             }
             (
@@ -3136,10 +3156,12 @@ fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlo
                         (Some(low), Some(high)) => Some(CompletableBlock {
                             keys,
                             completion: SuitedEnds(s1, (low, high)),
+                            completion_key,
                         }),
                         (Some(v), _) | (_, Some(v)) => Some(CompletableBlock {
                             keys,
                             completion: Unique(s1, v),
+                            completion_key,
                         }),
                         (None, None) => None,
                     }
@@ -3148,6 +3170,7 @@ fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlo
                         CompletableBlock {
                             keys,
                             completion: Unique(s1, v),
+                            completion_key,
                         }
                     })
                 } else {
@@ -3161,24 +3184,22 @@ fn completable_power_block(board: &Board, block: Block) -> Option<CompletableBlo
     }
 }
 
+
 fn block_to_two_cards_and_a_blank(
     board: &Board,
     block: Block,
-) -> Option<([(i8, i8); 2], [Card; 2])> {
+) -> Option<([(i8, i8); 2], [Card; 2], (i8, i8))> {
     let coords = block_to_coords(block);
-    let mut pairs_iter = coords
-        .iter()
-        .map(|key| board.get(key).map(|s| (*key, s.card)));
-    let possible_pairs: [Option<((i8, i8), Card)>; 3] = [
-        pairs_iter.next().and_then(id),
-        pairs_iter.next().and_then(id),
-        pairs_iter.next().and_then(id),
-    ];
+    let add_card = |key: (i8, i8)| (key, board.get(&key).map(|s| s.card));
 
-    match (possible_pairs[0], possible_pairs[1], possible_pairs[2]) {
-        (Some(p1), Some(p2), _) | (Some(p1), _, Some(p2)) | (_, Some(p1), Some(p2)) => {
-            Some(([p1.0, p2.0], [p1.1, p2.1]))
-        }
+    match (
+        add_card(coords[0]),
+        add_card(coords[1]),
+        add_card(coords[2]),
+    ) {
+        ((k1, Some(c1)), (k2, Some(c2)), (blank, None)) |
+        ((k1, Some(c1)), (blank, None), (k2, Some(c2))) |
+        ((blank, None), (k1, Some(c1)), (k2, Some(c2))) => Some(([k1, k2], [c1, c2], blank)),
         _ => None,
     }
 }
@@ -3863,6 +3884,7 @@ enum Plan {
     FlySpecific((i8, i8), (i8, i8)),
     ConvertSlashDemolish((i8, i8), usize),
     Move((i8, i8)),
+    Build((i8, i8)),
     Hatch((i8, i8)),
 }
 
@@ -3875,7 +3897,7 @@ fn get_plan(
 ) -> Option<Plan> {
     let power_blocks = power_blocks(board);
 
-    let disruption_targets = {
+    let (disruption_targets, empty_disruption_targets) = {
         let mut completable_power_blocks = completable_power_blocks(board);
 
         completable_power_blocks.retain(|completable| {
@@ -3917,11 +3939,35 @@ fn get_plan(
             .chain(completable_power_block_targets)
             .collect();
 
-        disruption_targets
-    };
-    println!("{:?}", disruption_targets);
-    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
+        let mut empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+            .iter()
+            .filter(|completable| {
+                let mut contoller_colours = completable.keys.iter().filter_map(|key| {
+                    board
+                        .get(key)
+                        .and_then(|space| controller_colour(&space.pieces))
+                });
+
+                contoller_colours.all(|c| c != colour)
+            })
+            .map(|completable| completable.completion_key)
+            .collect();
+
+        empty_disruption_targets.sort();
+        empty_disruption_targets.dedup();
+
+        (disruption_targets, empty_disruption_targets)
+    };
+    println!(
+        "disruption_targets {:?}",
+        disruption_targets
+            .iter()
+            .filter(|k| board.get(k).is_none())
+            .collect::<Vec<_>>()
+    );
+
+    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
     for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
@@ -3942,7 +3988,6 @@ fn get_plan(
         }
 
         let occupys_target = is_occupied_by(&board, &target, colour);
-
 
         if occupys_target && has_ace {
             return Some(Plan::Fly(target));
@@ -3987,7 +4032,7 @@ fn get_plan(
                 }
             };
 
-            if adjacent_to_target {
+            if adjacent_to_target && !occupys_target {
                 return Some(Plan::Move(target));
             } else if stashes[colour].is_full() {
                 let possible_plan = adjacent_keys
@@ -4034,36 +4079,39 @@ fn get_plan(
                 }
             }
         }
+    }
 
+    let build_targets = get_all_build_targets_set(board, colour);
+    println!("build_targets {:?}", build_targets);
+    println!("empty_disruption_targets {:?}", empty_disruption_targets);
+    for target in empty_disruption_targets.iter() {
+        if build_targets.contains(target) {
+            println!("Plan::Build({:?})", *target);
+            return Some(Plan::Build(*target));
+        }
+    }
 
+    for &target in disruption_targets.iter() {
+        let adjacent_filled_keys: Vec<_> = {
+            let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
+                .iter()
+                .map(|&(x, y)| (x + target.0, y + target.1))
+                .filter(|key| board.get(key).is_some())
+                .collect();
 
-        for &target in disruption_targets.iter() {
-            let adjacent_filled_keys: Vec<_> = {
-                let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
-                    .iter()
-                    .map(|&(x, y)| (x + target.0, y + target.1))
-                    .filter(|key| board.get(key).is_some())
-                    .collect();
+            rng.shuffle(&mut adjacent_filled_keys);
 
-                rng.shuffle(&mut adjacent_filled_keys);
+            adjacent_filled_keys
+        };
 
-                adjacent_filled_keys
-            };
+        //TODO should this only happen on completable power blocks?
+        //Walking there when you can't do anything about it seems pointless
 
-            //TODO should this only happen on completable power blocks?
-            //Walking there when you can't do anything about it seems pointless
-
-            for adjacent in adjacent_filled_keys.iter() {
-                for &(x, y) in FOUR_WAY_OFFSETS.iter() {
-                    println!(
-                        "move to adjacent {:?} from {:?}",
-                        adjacent,
-                        (x + adjacent.0, y + adjacent.1)
-                    );
-                    if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                        //TODO prefer moving pieces not on a power block
-                        return Some(Plan::Move(*adjacent));
-                    }
+        for adjacent in adjacent_filled_keys.iter() {
+            for &(x, y) in FOUR_WAY_OFFSETS.iter() {
+                if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
+                    //TODO prefer moving pieces not on a power block
+                    return Some(Plan::Move(*adjacent));
                 }
             }
         }
@@ -4212,6 +4260,7 @@ mod plan_tests {
             if let Some(Plan::Move((0,0))) = plan {
                 true
             } else {
+                println!("plan was {:?}", plan);
                 false
             }
         }
@@ -4265,6 +4314,7 @@ mod plan_tests {
             if let Some(Plan::FlySpecific((-1,2),_)) = plan {
                 true
             } else {
+                println!("plan was {:?}", plan);
                 false
             }
         }
@@ -4327,6 +4377,7 @@ mod plan_tests {
             if let Some(Plan::Move((-1,0))) = plan {
                 true
             } else {
+                println!("plan was {:?}", plan);
                 false
             }
         }
@@ -4425,6 +4476,263 @@ mod plan_tests {
             if let Some(Plan::Move((0,0))) = plan {
                 true
             } else {
+                println!("plan was {:?}", plan);
+                false
+            }
+        }
+
+        fn build_to_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(
+                    0,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+                pieces.insert(
+                    1,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+
+                board.insert(
+                    (0, 1),
+                    Space {
+                        card: Card {
+                            suit: Clubs,
+                            value: Two,
+                        },
+                        pieces,
+                        offset: 0,
+                    },
+                );
+            }
+            {
+                board.insert(
+                    (-1, 0),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Two,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            {
+                board.insert(
+                    (-1, 1),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Ten,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-1), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Four,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-2), Space {
+                    card: Card {
+                        suit: Spades,
+                        value: Five,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card {
+                suit: Hearts,
+                value: Eight,
+            }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Build((0,0))) = plan {
+                true
+            } else {
+                println!("plan was {:?}", plan);
+                false
+            }
+        }
+
+        fn build_to_block_other_player_power_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(
+                    0,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+                pieces.insert(
+                    1,
+                    Piece {
+                        colour: Green,
+                        pips: Pips::One,
+                    },
+                );
+
+                board.insert(
+                    (0, 1),
+                    Space {
+                        card: Card {
+                            suit: Clubs,
+                            value: Two,
+                        },
+                        pieces,
+                        offset: 0,
+                    },
+                );
+            }
+            {
+                board.insert(
+                    (-1, 0),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Two,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            {
+                board.insert(
+                    (-1, 1),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Ten,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-1), Space {
+                    card: Card {
+                        suit: Spades,
+                        value: Four,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-2), Space {
+                    card: Card {
+                        suit: Spades,
+                        value: Five,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card {
+                suit: Hearts,
+                value: Eight,
+            }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Build((0,0))) = plan {
+                true
+            } else {
+                println!("plan was {:?}", plan);
                 false
             }
         }
