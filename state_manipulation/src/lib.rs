@@ -2199,6 +2199,32 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     }
                 }
 
+                //Discard
+                if hand.len() > 6 {
+                    //TODO track what power blocks this cpu player is going for and
+                    //don't discard the pieces
+                    hand.sort_by_key(|card| {
+                        match card.value {
+                            Two | Ten => 100,
+                            Jack => 80,
+                            //TODO are theer cases where this
+                            //hueristic is clearly wrong?
+                            Queen => 70,
+                            Ace => 60,
+                            King => 0,
+                            a if a.is_number() => 90,
+                            _ => {
+                                debug_assert!(false, "unkown card type found during Cpu discard!");
+                                0
+                            }
+                        }
+                    });
+
+                    while hand.len() > 6 {
+                        state.pile.push(hand.pop().unwrap());
+                    }
+                }
+
                 current_participant = next_participant(cpu_player_count, current_participant);
             }
 
@@ -2325,7 +2351,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         all_cards.extend(state.player_hand.iter().cloned());
 
-        for hand in state.cpu_hands.iter() {
+        for i in 0..state.cpu_hands.len() {
+            let hand = &state.cpu_hands[i];
+            assert!(hand.len() <= 6, "Cpu({}) has {} cards!", i, hand.len());
             all_cards.extend(hand.iter().cloned());
         }
 
