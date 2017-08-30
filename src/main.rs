@@ -26,7 +26,7 @@ use std::str;
 extern crate rusttype;
 extern crate unicode_normalization;
 
-use rusttype::{FontCollection, Font, Scale, point, vector, PositionedGlyph};
+use rusttype::{point, vector, Font, FontCollection, PositionedGlyph, Scale};
 
 use common::*;
 
@@ -187,7 +187,6 @@ impl Resources {
         (width, height): (u32, u32),
         cache_dim: (u32, u32),
     ) -> Option<Self> {
-
         let mut frame_buffers = [0; FRAMEBUFFER_COUNT];
         let mut frame_buffer_textures = [0; FRAMEBUFFER_COUNT];
         let mut frame_buffer_render_buffers = [0; FRAMEBUFFER_COUNT];
@@ -390,7 +389,6 @@ impl Resources {
     }
 
     fn set_verts(&mut self, vert_vecs: Vec<Vec<f32>>) {
-
         let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
 
         unsafe {
@@ -410,17 +408,14 @@ impl Resources {
             (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
 
         unsafe {
-            self.ctx.BindBuffer(
-                gl::ELEMENT_ARRAY_BUFFER,
-                self.index_buffer,
-            );
+            self.ctx
+                .BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.index_buffer);
             self.ctx.BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
                 std::mem::transmute(indices.as_ptr()),
                 gl::DYNAMIC_DRAW,
             );
-
         };
 
         self.vert_ranges = vert_ranges;
@@ -444,7 +439,7 @@ struct TextRenderCommands(
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
-    Option<TextRenderCommand>
+    Option<TextRenderCommand>,
 );
 
 const MAX_TEXT_RENDER_COMMANDS: u8 = 16;
@@ -488,7 +483,6 @@ impl TextRenderCommands {
         if len <= MAX_TEXT_RENDER_COMMANDS {
             self[len] = Some(text_render_command);
         }
-
     }
 }
 
@@ -662,7 +656,7 @@ struct CharTuple(
     char,
     char,
     char,
-    char
+    char,
 );
 
 use std::ops::{Index, IndexMut};
@@ -704,16 +698,16 @@ impl Index<u8> for CharTuple {
             29 => &self.29,
             30 => &self.30,
             31 => &self.31,
-            32=> &self.32,
-            33=> &self.33,
-            34=> &self.34,
-            35=> &self.35,
-            36=> &self.36,
-            37=> &self.37,
-            38=> &self.38,
-            39=> &self.39,
-            40=> &self.40,
-            41=> &self.41,
+            32 => &self.32,
+            33 => &self.33,
+            34 => &self.34,
+            35 => &self.35,
+            36 => &self.36,
+            37 => &self.37,
+            38 => &self.38,
+            39 => &self.39,
+            40 => &self.40,
+            41 => &self.41,
             42 => &self.42,
             43 => &self.43,
             44 => &self.44,
@@ -776,16 +770,16 @@ impl IndexMut<u8> for CharTuple {
             29 => &mut self.29,
             30 => &mut self.30,
             31 => &mut self.31,
-            32=> &mut self.32,
-            33=> &mut self.33,
-            34=> &mut self.34,
-            35=> &mut self.35,
-            36=> &mut self.36,
-            37=> &mut self.37,
-            38=> &mut self.38,
-            39=> &mut self.39,
-            40=> &mut self.40,
-            41=> &mut self.41,
+            32 => &mut self.32,
+            33 => &mut self.33,
+            34 => &mut self.34,
+            35 => &mut self.35,
+            36 => &mut self.36,
+            37 => &mut self.37,
+            38 => &mut self.38,
+            39 => &mut self.39,
+            40 => &mut self.40,
+            41 => &mut self.41,
             42 => &mut self.42,
             43 => &mut self.43,
             44 => &mut self.44,
@@ -936,10 +930,12 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
         println!("{:?}", canvas.window().drawable_size());
-        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (
-            cache_width,
-            cache_height,
-        ));
+        RESOURCES = Resources::new(
+            &app,
+            ctx,
+            canvas.window().drawable_size(),
+            (cache_width, cache_height),
+        );
     }
 
     let mut state = app.new_state();
@@ -983,32 +979,38 @@ fn main() {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => events.push(common::Event::Quit),
-                    Event::KeyDown { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) }))
-                    }
-                    Event::KeyUp { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) }))
-                    }
+                    Event::KeyDown {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) })),
+                    Event::KeyUp {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) })),
                     Event::MouseMotion { x, y, .. } => {
                         events.push(common::Event::MouseMove((x, y)))
                     }
-                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Left, .. } => {
-                        events.push(common::Event::LeftMouseUp)
-                    }
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
+                    } => events.push(common::Event::LeftMouseUp),
                     Event::MouseButtonDown {
-                        mouse_btn: sdl2::mouse::MouseButton::Left, ..
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
                     } => events.push(common::Event::LeftMouseDown),
-                    Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Right, .. } => {
-                        events.push(common::Event::RightMouseUp)
-                    }
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
+                    } => events.push(common::Event::RightMouseUp),
                     Event::MouseButtonDown {
-                        mouse_btn: sdl2::mouse::MouseButton::Right, ..
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
                     } => events.push(common::Event::RightMouseDown),
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::Resized(w, h), ..
+                        win_event: sdl2::event::WindowEvent::Resized(w, h),
+                        ..
                     } |
                     Event::Window {
-                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h), ..
+                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h),
+                        ..
                     } => {
                         events.push(common::Event::WindowSize((w, h)));
                         unsafe {
@@ -1036,9 +1038,7 @@ fn main() {
             //and call this from `draw_text`
             {
                 for i in 0..resources.text_render_commands.len() {
-
                     if let Some(ref text_render_command) = resources.text_render_commands[i] {
-
                         let screen_dim = canvas.window().drawable_size();
 
                         let text = text_render_command.get_text();
@@ -1057,7 +1057,6 @@ fn main() {
                     }
                     resources.text_render_commands[i] = None;
                 }
-
             }
 
             if cfg!(debug_assertions) {
@@ -1074,20 +1073,15 @@ fn main() {
 
             window.gl_swap_window();
 
-            if let Some(sleep_time) = frame_duration.checked_sub(
-                std::time::Instant::now().duration_since(
-                    start,
-                ),
-            )
+            if let Some(sleep_time) =
+                frame_duration.checked_sub(std::time::Instant::now().duration_since(start))
             {
                 std::thread::sleep(sleep_time);
             }
-
         }
     } else {
         println!("Could not open window.");
     }
-
 }
 
 fn get_frame_buffer(resources: &Resources, frame_buffer_index: usize) -> gl::types::GLuint {
@@ -1518,11 +1512,13 @@ fn render_text(
         let paragraph_coords = {
             let v_metrics = font.v_metrics(font_scale);
 
-            let no_offset_glyphs =
-                layout_paragraph(font, Scale::uniform(scale), paragraph_max_width, text, (
-                    0.0,
-                    v_metrics.line_gap,
-                ));
+            let no_offset_glyphs = layout_paragraph(
+                font,
+                Scale::uniform(scale),
+                paragraph_max_width,
+                text,
+                (0.0, v_metrics.line_gap),
+            );
 
             let paragraph_width = no_offset_glyphs.iter().fold(0, |acc, g| {
                 std::cmp::max(g.pixel_bounding_box().map(|r| r.max.x).unwrap_or(acc), acc)
@@ -1535,7 +1531,6 @@ fn render_text(
                 x01 * screen_width as f32 - (paragraph_width as f32 / 2.0),
                 y01 * screen_height as f32 - (paragraph_height as f32 / 2.0),
             )
-
         };
 
         let glyphs = layout_paragraph(
@@ -1596,55 +1591,55 @@ fn render_text(
 
         let verts: Vec<_> = glyphs
             .iter()
-            .flat_map(|g| if let Ok(Some((uv_rect, screen_rect))) =
-                text_cache.rect_for(0, g)
-            {
-                let gl_rect = rusttype::Rect {
-                    min: origin +
-                        (vector(
-                            screen_rect.min.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                    max: origin +
-                        (vector(
-                            screen_rect.max.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                };
-                vec![
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                ]
-            } else {
-                Vec::new()
+            .flat_map(|g| {
+                if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
+                    let gl_rect = rusttype::Rect {
+                        min: origin +
+                            (vector(
+                                screen_rect.min.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                        max: origin +
+                            (vector(
+                                screen_rect.max.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                    };
+                    vec![
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                    ]
+                } else {
+                    Vec::new()
+                }
             })
             .collect();
 
@@ -1707,8 +1702,6 @@ fn render_text(
             ctx.BindTexture(gl::TEXTURE_2D, 0);
             ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
-
-
     }
 }
 
@@ -1718,7 +1711,7 @@ struct ColourShader {
     matrix_uniform: gl::types::GLsizei,
     colour_uniform: gl::types::GLsizei,
 }
-
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
@@ -1726,6 +1719,7 @@ static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
     gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform vec4 colour;\n\
     void main() {\n\
@@ -1742,6 +1736,7 @@ struct TextureShader {
     tint_uniform: gl::types::GLsizei,
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 //calculating the uvs here might be slower than passing them in.
 //Then again, maybe this is faster because of better memory badwidth.
 //We'll profile if it becomes a problem.
@@ -1756,6 +1751,7 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform sampler2D textures[2];\n\
     uniform int texture_index;\n\
@@ -1780,6 +1776,7 @@ struct TextShader {
     texture_uniform: gl::types::GLsizei,
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_VS_SRC: &'static str = "#version 120\n\
         attribute vec2 position;\n\
         attribute vec2 texcoord;\n\
@@ -1792,6 +1789,7 @@ static FONT_VS_SRC: &'static str = "#version 120\n\
             v_colour = colour;\n\
         }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_FS_SRC: &'static str = "#version 120\n\
         uniform sampler2D tex;\n\
         varying vec2 v_texcoord;\n\
@@ -1926,9 +1924,9 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         external_format,
                         data_type,
                         (match pixels {
-                             image_decoding::DecodingResult::U8(v) => v.as_ptr() as _,
-                             image_decoding::DecodingResult::U16(v) => v.as_ptr() as _,
-                         }),
+                            image_decoding::DecodingResult::U8(v) => v.as_ptr() as _,
+                            image_decoding::DecodingResult::U16(v) => v.as_ptr() as _,
+                        }),
                     );
                 }
             }
