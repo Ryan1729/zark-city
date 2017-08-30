@@ -674,38 +674,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    {
-        let power_blocks = power_blocks(&state.board);
-
-        // There is a way to have two winners: A player can move
-        // a piece from a contesed area to another whihc gives them a power block,
-        //while also leaving the contested block to another player.
-        //AFAICT that is the maximum possble though.
-        let mut winners = (None, None);
-
-        for block in power_blocks {
-            if let Some(controller) = single_controller(&state.stashes, &state.board, block) {
-                winners = match winners {
-                    (None, None) => (Some(controller), None),
-                    (Some(winner), _) | (_, Some(winner)) if winner == controller => winners,
-                    (Some(_), Some(second_winner)) => {
-                        debug_assert!(second_winner == controller, "Three winners?!");
-                        winners
-                    }
-                    (Some(winner), None) => (Some(winner), Some(controller)),
-                    (None, Some(mistake)) => (None, Some(mistake)),
-                };
-            }
-        }
-
-        if let Some(winner) = winners.0 {
-            state.turn = if winners.1 == Some(Player) {
-                //player gets top billing
-                Over(Player, Some(winner))
-            } else {
-                Over(winner, winners.1)
-            };
-        }
+    let winners = get_winners(&state.board, &state.stashes);
+    if let Some(winner) = winners.0 {
+        state.turn = if winners.1 == Some(Player) {
+            //player gets top billing
+            Over(Player, Some(winner))
+        } else {
+            Over(winner, winners.1)
+        };
     }
 
     let t = state.turn;
@@ -1038,22 +1014,22 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
         Move => if let SelectPiece(space_coords, piece_index) = action {
             if let Occupied(mut entry) = state.board.entry(space_coords) {
-                let mut space = entry.get_mut();
-                if let Some(piece) = space.pieces.remove(piece_index) {
-                    state.turn = MoveSelect(space_coords, piece_index, piece);
+                let space = entry.get_mut();
+                if let Some(piece_copy) = space.pieces.get(piece_index) {
+                    state.turn = MoveSelect(space_coords, piece_index, piece_copy);
                 }
             }
         } else if right_mouse_pressed || escape_pressed {
             state.turn = SelectTurnOption;
         },
-        MoveSelect(space_coords, piece_index, piece) => {
+        MoveSelect(space_coords, piece_index, piece_copy) => {
             draw_piece(
                 p,
                 view,
-                piece,
+                piece_copy,
                 world_mouse_x,
                 world_mouse_y,
-                piece_texture_spec(piece),
+                piece_texture_spec(piece_copy),
             );
 
 
@@ -1080,26 +1056,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             };
 
             if let Some(key) = target_space_coords {
-                let valid_targets = get_valid_move_targets(&state.board, space_coords);
-
-                if valid_targets.contains(&key) {
-                    if let Occupied(mut entry) = state.board.entry(key) {
-                        let mut space = entry.get_mut();
-
-                        //shpuld this be an insert at 0 so the new piece is clearly visible?
-                        space.pieces.push(piece);
-                    }
-
-
+                if perform_move(&mut state.board, space_coords, key, piece_index) {
                     state.turn = Discard;
                 }
             } else if right_mouse_pressed || escape_pressed {
-                if let Occupied(mut entry) = state.board.entry(space_coords) {
-                    let mut space = entry.get_mut();
-
-                    space.pieces.insert(piece_index, piece);
-                }
-
                 state.turn = SelectTurnOption;
             }
         }
@@ -1669,7 +1629,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         match plan {
                             Plan::Fly(_) | Plan::FlySpecific(_, _) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
-                            Plan::Move(_) => 4,
+                            Plan::Move(_) | Plan::MoveSpecific(_, _) => 4,
                             Plan::Build(_) => 3,
                             Plan::Hatch(_) => 7,
                         }
@@ -1684,6 +1644,21 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                     };
 
+                    fn choose_piece(
+                        board: &Board,
+                        key: &(i8, i8),
+                        colour: PieceColour,
+                    ) -> Option<((i8, i8), usize)> {
+                        if let Some(space) = board.get(key) {
+                            let own_pieces = space.pieces.filtered_indicies(|p| p.colour == colour);
+                            if let Some(piece_index) = own_pieces.last() {
+                                return Some((*key, *piece_index));
+                            }
+                        }
+
+                        None
+                    }
+
                     match turn_option {
                         1 => {
                             //Grow
@@ -1692,18 +1667,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 let occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour);
 
-                                if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
-                                {
-                                    let possible_piece_index =
-                                        state.board.get(&space_coords).and_then(|space| {
-                                            let own_pieces = space
-                                                .pieces
-                                                .filtered_indicies(|p| p.colour == colour);
-                                            rng.choose(&own_pieces).map(|&i| i)
-                                        });
-
-                                    possible_piece_index
-                                        .map(|piece_index| (space_coords, piece_index))
+                                if let Some(space_coords) = rng.choose(&occupied_spaces) {
+                                    choose_piece(&state.board, space_coords, colour)
                                 } else {
                                     None
                                 }
@@ -1780,55 +1745,56 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         4 => {
                             //Move
-                            let chosen_piece = if let Some(Plan::Move(target)) = possible_plan {
-                                let adjacent_keys: Vec<_> = {
-                                    let mut adjacent_keys : Vec<_> = FOUR_WAY_OFFSETS
+                            let chosen_piece = match possible_plan {
+                                Some(Plan::Move(target)) | Some(Plan::MoveSpecific(target, _)) => {
+                                    let adjacent_keys: Vec<_> = {
+                                        let mut adjacent_keys : Vec<_> = FOUR_WAY_OFFSETS
                                         .iter()
                                         .map(|&(x, y)| (x + target.0, y + target.1))
                                         .collect();
 
-                                    rng.shuffle(&mut adjacent_keys);
+                                        rng.shuffle(&mut adjacent_keys);
 
-                                    adjacent_keys
-                                };
+                                        adjacent_keys
+                                    };
 
-                                let mut result = None;
+                                    let mut result = None;
 
-                                for key in adjacent_keys.iter() {
-                                    if let Some(space) = state.board.get(key) {
-                                        let own_pieces =
-                                            space.pieces.filtered_indicies(|p| p.colour == colour);
-                                        if let Some(piece_index) = own_pieces.last() {
-                                            result = Some((*key, *piece_index));
+                                    for key in adjacent_keys.iter() {
+                                        let chosen_piece = choose_piece(&state.board, key, colour);
+                                        if chosen_piece.is_some() {
+                                            result = chosen_piece;
                                             break;
                                         }
                                     }
+
+                                    if result.is_some() {
+                                        result
+                                    } else {
+                                        possible_plan = None;
+                                        None
+                                    }
                                 }
+                                _ => {
+                                    let occupied_spaces: Vec<_> =
+                                        get_all_spaces_occupied_by(&state.board, colour);
 
-                                if result.is_some() {
-                                    result
-                                } else {
-                                    possible_plan = None;
-                                    None
-                                }
-                            } else {
-                                let occupied_spaces: Vec<_> =
-                                    get_all_spaces_occupied_by(&state.board, colour);
+                                    if let Some(space_coords) =
+                                        rng.choose(&occupied_spaces).map(|&i| i)
+                                    {
+                                        let possible_piece_index =
+                                            state.board.get(&space_coords).and_then(|space| {
+                                                let own_pieces = space
+                                                    .pieces
+                                                    .filtered_indicies(|p| p.colour == colour);
+                                                rng.choose(&own_pieces).map(|&i| i)
+                                            });
 
-                                if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i)
-                                {
-                                    let possible_piece_index =
-                                        state.board.get(&space_coords).and_then(|space| {
-                                            let own_pieces = space
-                                                .pieces
-                                                .filtered_indicies(|p| p.colour == colour);
-                                            rng.choose(&own_pieces).map(|&i| i)
-                                        });
-
-                                    possible_piece_index
-                                        .map(|piece_index| (space_coords, piece_index))
-                                } else {
-                                    None
+                                        possible_piece_index
+                                            .map(|piece_index| (space_coords, piece_index))
+                                    } else {
+                                        None
+                                    }
                                 }
                             };
 
@@ -1845,27 +1811,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     };
 
                                 if let Some(target_space_coords) = possible_target_space_coords {
-                                    let possible_piece = if let Occupied(mut source_entry) =
-                                        state.board.entry(space_coords)
-                                    {
-                                        let mut source_space = source_entry.get_mut();
-                                        source_space.pieces.remove(piece_index)
-                                    } else {
-                                        None
-                                    };
-
-                                    if let Some(piece) = possible_piece {
-                                        if let Occupied(mut target_entry) =
-                                            state.board.entry(target_space_coords)
-                                        {
-                                            let mut target_space = target_entry.get_mut();
-
-                                            //shpuld this be an insert at 0
-                                            //so the new piece is clearly visible?
-                                            target_space.pieces.push(piece);
-
-                                            break 'turn;
-                                        }
+                                    if perform_move(
+                                        &mut state.board,
+                                        space_coords,
+                                        target_space_coords,
+                                        piece_index,
+                                    ) {
+                                        break 'turn;
                                     }
                                 }
                             }
@@ -2486,9 +2438,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
 
         match state.turn {
-            MoveSelect(_, _, piece) => {
-                all_pieces.push(piece);
-            }
+            //MoveSelect uses a copy so we don't count it.
             FlySelect(_, space, _, _) => for piece in space.pieces.clone().into_iter() {
                 all_pieces.push(piece);
             },
@@ -2540,6 +2490,62 @@ fn occupied_by_or_adjacent_spaces(board: &Board, colour: PieceColour) -> Vec<(i8
     }
 
     set_to_vec(set)
+}
+
+fn perform_move(board: &mut Board, from: (i8, i8), to: (i8, i8), piece_index: usize) -> bool {
+    let valid_targets = get_valid_move_targets(&board, from);
+
+    if !valid_targets.contains(&to) {
+        return false;
+    }
+
+    let possible_piece = if let Occupied(mut source_entry) = board.entry(from) {
+        let mut source_space = source_entry.get_mut();
+        source_space.pieces.remove(piece_index)
+    } else {
+        None
+    };
+
+    if let Some(piece) = possible_piece {
+        if let Occupied(mut target_entry) = board.entry(to) {
+            let mut target_space = target_entry.get_mut();
+
+            //shpuld this be an insert at 0
+            //so the new piece is clearly visible?
+            target_space.pieces.push(piece);
+
+            return true;
+        }
+    }
+
+    false
+}
+
+fn get_winners(board: &Board, stashes: &Stashes) -> (Option<Participant>, Option<Participant>) {
+    let power_blocks = power_blocks(board);
+
+    // There is a way to have two winners: A player can move
+    // a piece from a contesed area to another whihc gives them a power block,
+    //while also leaving the contested block to another player.
+    //AFAICT that is the maximum possble though.
+    let mut winners = (None, None);
+
+    for block in power_blocks {
+        if let Some(controller) = single_controller(stashes, board, block) {
+            winners = match winners {
+                (None, None) => (Some(controller), None),
+                (Some(winner), _) | (_, Some(winner)) if winner == controller => winners,
+                (Some(_), Some(second_winner)) => {
+                    debug_assert!(second_winner == controller, "Three winners?!");
+                    winners
+                }
+                (Some(winner), None) => (Some(winner), Some(controller)),
+                (None, Some(mistake)) => (None, Some(mistake)),
+            };
+        }
+    }
+
+    winners
 }
 
 //a cheesy way to do an outline
@@ -3912,6 +3918,81 @@ fn active_colours(stashes: &Stashes) -> Vec<PieceColour> {
     colours
 }
 
+fn get_winning_plan(
+    board: &Board,
+    stashes: &Stashes,
+    hand: &Vec<Card>,
+    colour: PieceColour,
+) -> Option<Plan> {
+    //Since the board can have a maximum of 40 entries I'm assuming avaoiding copies isn't
+    //worth it, until I see until evidence to the contrary
+
+    let participant = {
+        let possible_particpant = colour_to_participant(stashes, colour);
+
+        if let Some(participant) = possible_particpant {
+            participant
+        } else {
+            return None;
+        }
+    };
+
+    let occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
+
+    if has_ace {
+        for key in occupied_spaces.iter() {
+            let fly_from_targets = fly_from_targets(board, key);
+
+            for target in fly_from_targets {
+                let mut board_copy = board.clone();
+
+                if let Some(space) = board_copy.remove(key) {
+                    board_copy.insert(target, space);
+
+                    if winners_contains(get_winners(&board_copy, stashes), participant) {
+                        return Some(Plan::FlySpecific(*key, target));
+                    }
+                }
+            }
+        }
+    }
+
+    for key in occupied_spaces.iter() {
+        let move_targets = get_valid_move_targets(board, *key);
+
+        for target in move_targets {
+            let mut board_copy = board.clone();
+
+            if let Some(piece_index) = board_copy.get(key).and_then(|space| {
+                space
+                    .pieces
+                    .filtered_indicies(|p| p.colour == colour)
+                    .last()
+                    .map(|&i| i)
+            }) {
+                perform_move(&mut board_copy, *key, target, piece_index);
+
+                if winners_contains(get_winners(&board_copy, stashes), participant) {
+                    return Some(Plan::MoveSpecific(*key, target));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn winners_contains(
+    winners: (Option<Participant>, Option<Participant>),
+    participant: Participant,
+) -> bool {
+    match winners {
+        (Some(p), _) | (_, Some(p)) if p == participant => true,
+        _ => false,
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 enum Plan {
@@ -3919,6 +4000,7 @@ enum Plan {
     FlySpecific((i8, i8), (i8, i8)),
     ConvertSlashDemolish((i8, i8), usize),
     Move((i8, i8)),
+    MoveSpecific((i8, i8), (i8, i8)),
     Build((i8, i8)),
     Hatch((i8, i8)),
 }
@@ -3930,6 +4012,15 @@ fn get_plan(
     rng: &mut StdRng,
     colour: PieceColour,
 ) -> Option<Plan> {
+    {
+        let winning_plan = get_winning_plan(board, stashes, hand, colour);
+        if winning_plan.is_some() {
+            println!("winning plan!");
+            return winning_plan;
+        }
+    }
+    println!("No winning plan");
+
     let power_blocks = power_blocks(board);
 
     let (disruption_targets, empty_disruption_targets) = {
@@ -4147,11 +4238,8 @@ fn get_plan(
     }
 
     let build_targets = get_all_build_targets_set(board, colour);
-    println!("build_targets {:?}", build_targets);
-    println!("empty_disruption_targets {:?}", empty_disruption_targets);
     for target in empty_disruption_targets.iter() {
         if build_targets.contains(target) {
-            println!("Plan::Build({:?})", *target);
             return Some(Plan::Build(*target));
         }
     }
@@ -4799,6 +4887,85 @@ mod plan_tests {
             } else {
                 println!("plan was {:?}", plan);
                 false
+            }
+        }
+
+        fn take_winning_step(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let board = green_vertical_power_block_board();
+
+            let green_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash: Stash::full(Red),
+                cpu_stashes: vec![green_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
+
+            match plan {
+                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+        fn take_winning_step_when_other_options_exist(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = green_vertical_power_block_board();
+
+            {
+                board.insert(
+                    (-1, 0),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Eight,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            let green_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash: Stash::full(Red),
+                cpu_stashes: vec![green_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
+
+            match plan {
+                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
             }
         }
     }
