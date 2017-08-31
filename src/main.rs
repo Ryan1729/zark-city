@@ -1259,15 +1259,14 @@ fn draw_layer(frame_buffer_index: usize, alpha: f32) {
                     1.0,
                 ];
 
+                ctx.UseProgram(texture_shader.program);
+
                 resources.ctx.UniformMatrix4fv(
                     resources.texture_shader.matrix_uniform as _,
                     1,
                     gl::FALSE,
                     world_matrix.as_ptr() as _,
                 );
-
-
-                ctx.UseProgram(texture_shader.program);
 
                 ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
                 ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
