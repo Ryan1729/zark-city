@@ -200,7 +200,6 @@ impl Resources {
 
             //create framebuffers
             ctx.GenFramebuffers(1, frame_buffers.as_mut_ptr().offset(1));
-            println!("{:?}", frame_buffers);
 
             ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffers[1]);
 

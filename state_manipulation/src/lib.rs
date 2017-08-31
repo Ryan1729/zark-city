@@ -1992,6 +1992,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                     }
                                                                 }
 
+                                                                if cfg!(debug_assertions) {
+                                                                    print!("Convert:");
+
+                                                                    println!(
+                                                                        "{:?} to {:?} at {:?}",
+                                                                        piece.colour,
+                                                                        colour,
+                                                                        space_coords
+                                                                    );
+                                                                }
+
                                                                 break 'turn;
                                                             }
                                                         }
@@ -2019,6 +2030,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                     ) {
                                                         hand.push(card);
                                                     }
+                                                }
+
+                                                if cfg!(debug_assertions) {
+                                                    println!(
+                                                        "Demolish:{:?} piece at {:?}",
+                                                        piece.colour,
+                                                        space_coords
+                                                    );
                                                 }
 
                                                 break 'turn;
@@ -2132,32 +2151,109 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     .collect();
 
                                 number_cards.sort();
+                                rng.shuffle(&mut number_cards);
 
-                                if let Some(&card_index) = rng.choose(&number_cards) {
-                                    let target_space_coords =
-                                        if let Some(Plan::Hatch(target)) = possible_plan {
-                                            Some(target)
-                                        } else {
-                                            let mut hatch_targets: Vec<
+                                if number_cards.len() != 0 {
+                                    let board = &mut state.board;
+                                    let possible_decision = if let Some(Plan::Hatch(target)) =
+                                        possible_plan
+                                    {
+                                        rng.choose(&number_cards)
+                                            .map(|&i| i)
+                                            .and_then(|i| Some((target, i)))
+                                    } else {
+                                        let mut hatch_targets: Vec<
                                                 (i8, i8),
-                                            > = get_all_hatch_targets(&state.board)
+                                            > = get_all_hatch_targets(board)
                                                 .iter()
                                                 .cloned()
                                                 .collect();
 
-                                            hatch_targets.sort();
+                                        hatch_targets.sort_by_key(|key| {
+                                            let adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                                                    .iter()
+                                                    .map(|&(x, y)| (x + key.0, y + key.1))
+                                                    .collect();
 
-                                            rng.choose(&hatch_targets).cloned()
-                                        };
 
-                                    if let Some(key) = target_space_coords {
+                                            other_colour_occupation_count(
+                                                board,
+                                                &adjacent_keys,
+                                                colour,
+                                            )
+                                        });
+
+
+                                        if let Some(default_space_coord) =
+                                            hatch_targets.last().map(|&key| key)
+                                        {
+                                            let mut possible_decision = None;
+
+                                            //TODO hatching far away from other cards is useful
+                                            //if you can make a power block and everyone else is
+                                            //far enough away. This might not happen in practice.
+
+                                            let combined_power_block_count =
+                                                combined_power_blocks(&board).iter().count();
+
+                                            while let Some(key) = hatch_targets.pop() {
+                                                //TODO We assume (for now) that when hatching we
+                                                //will want to avoid making a power block. Making
+                                                //a new one as a distraction *may* be useful some
+                                                //of the time.
+                                                let mut number_cards_copy = number_cards.clone();
+                                                let mut board_copy = board.clone();
+
+                                                //completable_power_blocks
+                                                number_cards_copy.retain(
+                                                    |i| if let Some(card) = hand.get(*i) {
+                                                        board_copy.insert(
+                                                            key,
+                                                            Space {
+                                                                card: *card,
+                                                                ..Default::default()
+                                                            },
+                                                        );
+
+                                                        let new_combined_power_block_count =
+                                                            combined_power_blocks(&board_copy)
+                                                                .iter()
+                                                                .count();
+
+                                                        new_combined_power_block_count <=
+                                                            combined_power_block_count
+                                                    } else {
+                                                        false
+                                                    },
+                                                );
+
+                                                if let Some(card_index) = number_cards_copy.pop() {
+                                                    possible_decision = Some((key, card_index));
+                                                    break;
+                                                }
+                                            }
+
+                                            possible_decision.or_else(|| {
+                                                if cfg!(debug_assertions) {
+                                                    println!("Had to make block with Hatch");
+                                                }
+                                                rng.choose(&number_cards)
+                                                    .map(|&i| (default_space_coord, i))
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    };
+
+
+                                    if let Some((key, card_index)) = possible_decision {
                                         let mut pieces: SpacePieces = Default::default();
 
                                         if let Some(piece) = stash.remove(Pips::One) {
                                             pieces.push(piece);
                                         }
 
-                                        state.board.insert(
+                                        board.insert(
                                             key,
                                             Space {
                                                 card: hand.remove(card_index),
@@ -2166,6 +2262,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 ..Default::default()
                                             },
                                         );
+
+                                        if cfg!(debug_assertions) {
+                                            println!("Hatch at {:?}", key);
+                                        }
 
                                         break 'turn;
                                     }
@@ -2606,6 +2706,20 @@ fn draw_outlined_text(
     );
 }
 
+fn other_colour_occupation_count(
+    board: &Board,
+    keys: &Vec<(i8, i8)>,
+    colour: PieceColour,
+) -> usize {
+    keys.iter()
+        .filter(|key| {
+            board
+                .get(key)
+                .and_then(|s| controller_colour(&s.pieces).map(|c| c != colour))
+                .unwrap_or(false)
+        })
+        .count()
+}
 
 const HUD_LINE: f32 = 0.675;
 const WARNING_TIMEOUT: u32 = 2500;
@@ -3302,6 +3416,26 @@ fn completable_power_blocks(board: &Board) -> Vec<CompletableBlock> {
     result
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CombinedBlock {
+    Completable(CompletableBlock),
+    Complete(Block),
+}
+use CombinedBlock::*;
+fn combined_power_blocks(board: &Board) -> Vec<CombinedBlock> {
+    power_blocks(board)
+        .iter()
+        .cloned()
+        .map(Complete)
+        .chain(
+            completable_power_blocks(board)
+                .iter()
+                .cloned()
+                .map(Completable),
+        )
+        .collect()
+}
+
 fn block_to_coords(block: Block) -> [(i8, i8); 3] {
     match block {
         Horizontal(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
@@ -3388,6 +3522,7 @@ fn is_power_block(board: &Board, block: Block) -> bool {
 fn draw_card(p: &Platform, card_matrix: [f32; 16], texture_spec: TextureSpec) {
     (p.draw_textured_poly_with_matrix)(card_matrix, CARD_POLY_INDEX, texture_spec, 0);
 }
+
 fn draw_empty_space(p: &Platform, card_matrix: [f32; 16]) {
     (p.draw_textured_poly_with_matrix)(
         card_matrix,
@@ -4045,7 +4180,7 @@ fn get_plan(
             .flat_map(|block| block_to_coords(block).to_vec().into_iter())
             .collect();
 
-        let other_colour_occupation_count = |key: &(i8, i8)| {
+        let other_colour_occupation_count_sorter = |key: &(i8, i8)| {
             let mut power_block_keys = Vec::new();
 
             for block in power_blocks.iter() {
@@ -4062,15 +4197,8 @@ fn get_plan(
             }
 
             //how many of those spaces are occupied by other colours
-            let count = power_block_keys
-                .iter()
-                .filter(|key| {
-                    board
-                        .get(key)
-                        .and_then(|s| controller_colour(&s.pieces).map(|c| c != colour))
-                        .unwrap_or(false)
-                })
-                .count();
+            let count = other_colour_occupation_count(board, &power_block_keys, colour);
+
 
             //put the highest count keys in front
             <usize>::max_value() - count
@@ -4078,7 +4206,7 @@ fn get_plan(
 
         power_block_targets.sort();
         power_block_targets.dedup();
-        power_block_targets.sort_by_key(&other_colour_occupation_count);
+        power_block_targets.sort_by_key(&other_colour_occupation_count_sorter);
 
         let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
@@ -4087,7 +4215,7 @@ fn get_plan(
 
         completable_power_block_targets.sort();
         completable_power_block_targets.dedup();
-        completable_power_block_targets.sort_by_key(other_colour_occupation_count);
+        completable_power_block_targets.sort_by_key(other_colour_occupation_count_sorter);
 
         let disruption_targets: Vec<(i8, i8)> = power_block_targets
             .into_iter()
