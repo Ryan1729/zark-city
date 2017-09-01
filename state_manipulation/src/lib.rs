@@ -4251,6 +4251,21 @@ fn get_plan(
         );
     }
 
+    //TODO explicit other player winning prevention check here
+    //  * see if other players have a winning move
+    //  * if so, look for a move that prevents it
+
+    let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
+
+    if has_number_card {
+        let build_targets = get_all_build_targets_set(board, colour);
+        for target in empty_disruption_targets.iter() {
+            if build_targets.contains(target) {
+                return Some(Plan::Build(*target));
+            }
+        }
+    }
+
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
     for &target in disruption_targets.iter() {
@@ -4365,10 +4380,25 @@ fn get_plan(
         }
     }
 
-    let build_targets = get_all_build_targets_set(board, colour);
-    for target in empty_disruption_targets.iter() {
-        if build_targets.contains(target) {
-            return Some(Plan::Build(*target));
+    if has_ace {
+        let occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+        let occupied_disruption_targets: Vec<_> = disruption_targets
+            .iter()
+            .filter(|key| occupied_spaces.contains(key))
+            .cloned()
+            .collect();
+
+        for target in empty_disruption_targets.iter() {
+            for source in occupied_disruption_targets.iter() {
+                return Some(Plan::FlySpecific(*source, *target));
+            }
+        }
+
+        for target in empty_disruption_targets.iter() {
+            for source in occupied_spaces.iter() {
+                return Some(Plan::FlySpecific(*source, *target));
+            }
         }
     }
 
