@@ -2064,11 +2064,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             let board = &mut state.board;
                             let chosen_space = {
                                 match possible_plan {
-                                    Some(Plan::Fly(target)) |
-                                    Some(Plan::FlySpecific(_, target)) => {
-                                        if board.contains_key(&target) {
-                                            board.remove(&target).map(|space| (target, space))
+                                    Some(Plan::Fly(source)) |
+                                    Some(Plan::FlySpecific(source, _)) => {
+                                        if board.contains_key(&source) {
+                                            board.remove(&source).map(|space| (source, space))
                                         } else {
+                                            debug_assert!(false, "Bad Fly/FlySpecific Plan!");
                                             possible_plan = None;
                                             None
                                         }
@@ -2090,9 +2091,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             if let Some((old_coords, space)) = chosen_space {
                                 let target_space_coords: Option<
                                     (i8, i8),
-                                > = if let Some(Plan::FlySpecific(source, _)) = possible_plan {
-                                    if let None = board.get(&source) {
-                                        Some(source)
+                                > = if let Some(Plan::FlySpecific(_, target)) = possible_plan {
+                                    if let None = board.get(&target) {
+                                        Some(target)
                                     } else {
                                         debug_assert!(false, "Bad Plan::FlySpecific!");
                                         None
@@ -5079,6 +5080,126 @@ mod plan_tests {
             let stashes = Stashes {
                 player_stash: Stash::full(Red),
                 cpu_stashes: vec![green_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
+
+            match plan {
+                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+        fn move_to_delay_even_when_another_power_block_exists(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = green_vertical_power_block_board();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-2), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                board.insert(
+                    (0, -3),
+                    Space {
+                        card: Card {
+                            suit: Spades,
+                            value: Eight,
+                        },
+                        .. Default::default()
+                    },
+                );
+            }
+
+            //alternate power block
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Green,
+                    pips: Pips::Two,
+                });
+                pieces.insert(1, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((0,-4), Space {
+                    card: Card {
+                        suit: Diamonds,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Green,
+                    pips: Pips::Two,
+                });
+                pieces.insert(1, Piece {
+                    colour: Red,
+                    pips: Pips::Two,
+                });
+
+                board.insert((0,-5), Space {
+                    card: Card {
+                        suit: Diamonds,
+                        value: Nine,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+            {
+                board.insert((0,-6), Space {
+                    card: Card {
+                        suit: Diamonds,
+                        value: Eight,
+                    },
+                    ..Default::default()
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
             };
 
             let hand = vec![];
