@@ -1426,7 +1426,7 @@ fn draw_verts_with_texture(
     frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
-        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+        begin_using_frame_buffer(ctx, frame_buffer);
 
         ctx.UseProgram(texture_shader.program);
 
@@ -1463,7 +1463,7 @@ fn draw_verts_with_texture(
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
-        ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+        end_using_frame_buffer(ctx);
     }
 }
 

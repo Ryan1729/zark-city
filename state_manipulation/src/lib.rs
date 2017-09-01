@@ -2819,7 +2819,6 @@ fn turn_options_button(
         0.0,
     );
 
-
     let camera = scale_translation(0.0625, x, y);
 
     let inverse_camera = inverse_scale_translation(0.0625, x, y);
