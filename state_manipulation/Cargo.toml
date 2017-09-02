@@ -14,3 +14,4 @@ path = "../common"
 
 [dev-dependencies]
 quickcheck = "0.3"
+lazy_static = "0.2"

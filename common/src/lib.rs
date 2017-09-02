@@ -266,7 +266,7 @@ mod stash_tests {
     }
 }
 
-const STASH_MAX: u8 = 9;
+pub const STASH_MAX: u8 = 9;
 
 use std::ops::{Index, IndexMut};
 

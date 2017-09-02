@@ -1634,14 +1634,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Hatch(_) => 7,
                         }
                     } else {
-                        if cfg!(debug_assertions) {
-                            let x = *rng.choose(&vec![0, 1, 2, 3, 4, 5, 7]).unwrap_or(&0);
-                            println!("randomly chose {:?}", x);
-
-                            x
+                        let x = if stashes[colour].is_full() {
+                            //can only Draw or Hatch
+                            *rng.choose(&vec![0, 7]).unwrap_or(&0)
                         } else {
                             *rng.choose(&vec![0, 1, 2, 3, 4, 5, 7]).unwrap_or(&0)
+                        };
+                        if cfg!(debug_assertions) {
+                            println!("randomly chose {:?}", x);
                         }
+
+                        x
                     };
 
                     fn choose_piece(
@@ -4150,11 +4153,15 @@ fn get_plan(
     {
         let winning_plan = get_winning_plan(board, stashes, hand, colour);
         if winning_plan.is_some() {
-            println!("winning plan!");
+            if cfg!(debug_assertions) {
+                println!("winning plan!");
+            }
             return winning_plan;
         }
     }
-    println!("No winning plan");
+    if cfg!(debug_assertions) {
+        println!("No winning plan");
+    }
 
     let power_blocks = power_blocks(board);
 
@@ -4268,6 +4275,19 @@ fn get_plan(
 
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
+    let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+    //2 for 1 if possible
+    occupied_spaces.sort_by_key(|key| {
+        if disruption_targets.contains(key) {
+            //keep at the front
+            0u8
+        } else {
+            //move to the end
+            255u8
+        }
+    });
+
     for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
             //It's contested enough if it won't be taken for at least one round.
@@ -4308,7 +4328,7 @@ fn get_plan(
 
 
             if adjacent_to_target || occupys_target {
-                let highest_pip_target: Option<u8> =
+                let pip_budget: Option<u8> =
                     hand.iter()
                         .fold(None, |acc, card| match (acc, pip_value(&card)) {
                             (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
@@ -4316,11 +4336,13 @@ fn get_plan(
                             (None, pip_value) => Some(pip_value),
                         });
 
-                if let Some(pip_max) = highest_pip_target {
+                if let Some(pip_max) = pip_budget {
                     let possible_target_piece = board.get(&target).and_then(|space| {
-                        let other_player_pieces = space.pieces.filtered_indicies(
-                            |p| p.colour != colour && u8::from(p.pips) <= pip_max,
-                        );
+                        let other_player_pieces = space.pieces.filtered_indicies(|p| {
+                            p.colour != colour && u8::from(p.pips) <= pip_max
+                            //Don't give your opponent the ability to hatch
+                            && stashes[colour].used_count() < STASH_MAX - 1
+                        });
 
                         //TODO how should we pick which colour to target?
                         rng.choose(&other_player_pieces).cloned()
@@ -4345,8 +4367,6 @@ fn get_plan(
 
             //Try to fly next to the target
             if has_ace {
-                let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
-
                 //We filter out these spaces so the cpu player doesn't
                 //waste an Ace flying somehere that doesn't change the situation
                 //TODO check this works on overlapping power blocks
@@ -4357,18 +4377,28 @@ fn get_plan(
                     .flat_map(|coords| coords.to_vec().into_iter())
                     .collect();
 
+                let filtered_occupied_spaces = occupied_spaces
+                    .iter()
+                    .filter(|coord| !undesired_coords.contains(coord));
 
-                if undesired_coords.len() > 0 {
-                    occupied_spaces.retain(|coord| !undesired_coords.contains(coord))
-                }
-
-                let adjacent_empty_spaces: Vec<_> = adjacent_keys
+                let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
                     .iter()
                     .filter(|key| board.get(key).is_none())
                     .collect();
 
+                //2 for 1 if possible
+                adjacent_empty_spaces.sort_by_key(|key| {
+                    if empty_disruption_targets.contains(key) {
+                        //keep at the front
+                        0u8
+                    } else {
+                        //move to the end
+                        255u8
+                    }
+                });
+
                 //Find suggested place to fly from
-                for source_coord in occupied_spaces.iter() {
+                for source_coord in filtered_occupied_spaces {
                     let possible_targets = fly_from_targets(board, source_coord);
                     for target_coord in adjacent_empty_spaces.iter() {
                         if possible_targets.contains(target_coord) {
@@ -4381,8 +4411,6 @@ fn get_plan(
     }
 
     if has_ace {
-        let occupied_spaces = get_all_spaces_occupied_by(board, colour);
-
         let occupied_disruption_targets: Vec<_> = disruption_targets
             .iter()
             .filter(|key| occupied_spaces.contains(key))
@@ -4434,6 +4462,10 @@ fn get_plan(
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
+
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 
 #[cfg(test)]
 mod plan_tests {
@@ -4518,6 +4550,66 @@ mod plan_tests {
         }
 
         board
+    }
+
+    fn add_space(board: &mut Board, key: (i8, i8), suit: Suit, value: Value) {
+        board.insert(
+            key,
+            Space {
+                card: Card { suit, value },
+                ..Default::default()
+            },
+        );
+    }
+
+    fn add_piece(board: &mut Board, key: (i8, i8), colour: PieceColour, pips: Pips) {
+        board
+            .get_mut(&key)
+            .map(|s| s.pieces.push(Piece { colour, pips }));
+    }
+
+    //I thought that the repeated construction of the table was slow.
+    //Doesn't seem to be the case though.
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    lazy_static! {
+        static ref BREAK_UP_BOARD: HashMap<(i8,i8), Space> = {
+            let mut  board = HashMap::new();
+            // //Non-compleatable power block
+            add_space(&mut board, (0, 0), Diamonds, Six);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+
+            add_space(&mut board, (0, 1), Diamonds, Five);
+            add_piece(&mut board, (0,1), Red, Pips::Two);
+
+            add_space(&mut board, (-1, 1), Hearts, Eight);
+
+            add_space(&mut board, (-1, 0), Spades, Four);
+
+            add_space(&mut board, (-1, 2), Hearts, Four);
+            add_piece(&mut board, (-1, 2), Green, Pips::One);
+
+            add_space(&mut board, (0, 2), Spades, Two);
+
+            add_space(&mut board, (0, -1), Hearts, Seven);
+
+            add_space(&mut board, (1, 0), Clubs, Nine);
+
+            //completable power block
+            add_space(&mut board, (1, 1), Clubs, Four);
+            add_piece(&mut board, (1, 1), Red, Pips::One);
+
+            add_space(&mut board, (1, 2), Diamonds, Four);
+            add_piece(&mut board, (1, 2), Red, Pips::One);
+
+            //disruptable block
+            add_space(&mut board, (-1, -1), Clubs, Ten);
+            add_piece(&mut board, (-1, -1), Green, Pips::Three);
+
+            add_space(&mut board, (0, -2), Spades, Ten);
+            add_piece(&mut board, (0, -2), Green, Pips::Three);
+
+            board
+        };
     }
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -4619,6 +4711,114 @@ mod plan_tests {
             };
 
             let hand = vec![Card {value: Ace, suit:Spades}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::FlySpecific((-1,2),_)) = plan {
+                true
+            } else {
+                println!("plan was {:?}", plan);
+                false
+            }
+        }
+
+        fn move_in_and_hope_with_number_card_in_hand(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = green_vertical_power_block_board();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((-1,0), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Four}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            if let Some(Plan::Move((0,0))) = plan {
+                true
+            } else {
+                println!("plan was {:?}", plan);
+                false
+            }
+        }
+
+        fn fly_towards_with_number_card_in_hand(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = green_vertical_power_block_board();
+
+            {
+                let mut pieces: SpacePieces = Default::default();
+                pieces.insert(0, Piece {
+                    colour: Red,
+                    pips: Pips::One,
+                });
+
+                board.insert((-1,2), Space {
+                    card: Card {
+                        suit: Hearts,
+                        value: Ten,
+                    },
+                        pieces,
+                        offset: 0,
+                });
+            }
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card {value: Ace, suit:Spades}, Card{suit: Diamonds, value:Four}];
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
@@ -5244,6 +5444,56 @@ mod plan_tests {
                     println!("plan was {:?}", plan);
                     false
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_break_up_two_blocks_when_possible() {
+        //this test is slow
+        quickcheck::QuickCheck::new()
+            .tests(10)
+            .quickcheck(break_up_two_blocks_when_possible as fn(usize) -> bool)
+    }
+
+    fn break_up_two_blocks_when_possible(seed: usize) -> bool {
+        let seed_slice: &[_] = &[seed];
+        let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+        let player_stash = Stash {
+            colour: Green,
+            one_pip: TwoLeft,
+            two_pip: ThreeLeft,
+            three_pip: OneLeft,
+        };
+
+        let red_stash = Stash {
+            colour: Red,
+            one_pip: NoneLeft,
+            two_pip: TwoLeft,
+            three_pip: ThreeLeft,
+        };
+
+        let stashes = Stashes {
+            player_stash,
+            cpu_stashes: vec![red_stash],
+        };
+
+        let hand = vec![
+            Card {
+                value: Ace,
+                suit: Spades,
+            },
+        ];
+
+        let plan = get_plan(&BREAK_UP_BOARD, &stashes, &hand, &mut rng, Red);
+
+        match plan {
+            Some(Plan::FlySpecific((1, 1), (-1, -2))) |
+            Some(Plan::FlySpecific((1, 2), (-1, -2))) => true,
+            _ => {
+                println!("plan was {:?}", plan);
+                false
             }
         }
     }
