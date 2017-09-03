@@ -4262,19 +4262,6 @@ fn get_plan(
     //  * see if other players have a winning move
     //  * if so, look for a move that prevents it
 
-    let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
-
-    if has_number_card {
-        let build_targets = get_all_build_targets_set(board, colour);
-        for target in empty_disruption_targets.iter() {
-            if build_targets.contains(target) {
-                return Some(Plan::Build(*target));
-            }
-        }
-    }
-
-    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
-
     let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
 
     //2 for 1 if possible
@@ -4287,6 +4274,10 @@ fn get_plan(
             255u8
         }
     });
+
+
+
+    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
     for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
@@ -4406,6 +4397,17 @@ fn get_plan(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
+
+    if has_number_card {
+        let build_targets = get_all_build_targets_set(board, colour);
+        for target in empty_disruption_targets.iter() {
+            if build_targets.contains(target) {
+                return Some(Plan::Build(*target));
             }
         }
     }
@@ -5451,6 +5453,8 @@ mod plan_tests {
     #[test]
     fn test_break_up_two_blocks_when_possible() {
         //this test is slow
+        //TODO find out why (is `lazy_static` being weird?)
+        //and make sure it isn't affecting the actual game.
         quickcheck::QuickCheck::new()
             .tests(10)
             .quickcheck(break_up_two_blocks_when_possible as fn(usize) -> bool)
