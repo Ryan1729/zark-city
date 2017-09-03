@@ -4165,22 +4165,22 @@ fn get_plan(
 
     let power_blocks = power_blocks(board);
 
+    let mut completable_power_blocks = completable_power_blocks(board);
+
+    completable_power_blocks.retain(|completable| {
+        let has_card_to_complete: bool = match completable.completion {
+            Unique(suit, value) => hand.contains(&Card { suit, value }),
+            ValueMatch(v) => hand.iter().any(|c| v == c.value),
+            SuitedEnds(suit, (v1, v2)) => {
+                hand.contains(&Card { suit, value: v1 }) || hand.contains(&Card { suit, value: v2 })
+            }
+        };
+
+        //If we have a card to complete the block, (probably), no one else can complete it
+        !has_card_to_complete
+    });
+
     let (disruption_targets, empty_disruption_targets) = {
-        let mut completable_power_blocks = completable_power_blocks(board);
-
-        completable_power_blocks.retain(|completable| {
-            let has_card_to_complete: bool = match completable.completion {
-                Unique(suit, value) => hand.contains(&Card { suit, value }),
-                ValueMatch(v) => hand.iter().any(|c| v == c.value),
-                SuitedEnds(suit, (v1, v2)) => {
-                    hand.contains(&Card { suit, value: v1 }) ||
-                        hand.contains(&Card { suit, value: v2 })
-                }
-            };
-
-            !has_card_to_complete
-        });
-
         let mut power_block_targets: Vec<(i8, i8)> = power_blocks
             .iter()
             .cloned()
@@ -4229,7 +4229,6 @@ fn get_plan(
             .chain(completable_power_block_targets)
             .collect();
 
-
         let mut empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
             .filter(|completable| {
@@ -4258,9 +4257,42 @@ fn get_plan(
         );
     }
 
-    //TODO explicit other player winning prevention check here
+    //TODO more comprhensive other player winning prevention check here
     //  * see if other players have a winning move
     //  * if so, look for a move that prevents it
+
+    let other_colour_winnable_blocks: Vec<_> = power_blocks
+        .iter()
+        .filter(|&&block| {
+            let contoller_colours: Vec<PieceColour> = block_to_coords(block)
+                .iter()
+                .filter_map(|key| {
+                    board
+                        .get(key)
+                        .and_then(|space| controller_colour(&space.pieces))
+                })
+                .collect();
+
+            match (
+                contoller_colours.get(0),
+                contoller_colours.get(1),
+                contoller_colours.get(2),
+            ) {
+                (Some(c0), Some(c1), None) |
+                (Some(c0), None, Some(c1)) |
+                (None, Some(c0), Some(c1)) if *c0 != colour && c0 == c1 =>
+                {
+                    true
+                }
+                _ => false,
+            }
+        })
+        .collect();
+
+    println!(
+        "other_colour_winnable_blocks {:?}",
+        other_colour_winnable_blocks
+    );
 
     let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
 
@@ -4275,9 +4307,98 @@ fn get_plan(
         }
     });
 
-
-
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
+    let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
+
+    for &&block in other_colour_winnable_blocks.iter() {
+        for target in block_to_coords(block).iter() {
+            let adjacent_keys: Vec<_> = {
+                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .collect();
+
+                rng.shuffle(&mut adjacent_keys);
+
+                adjacent_keys
+            };
+
+
+            //Try to fly next to the target
+            //TODO Reduce duplication
+            if has_ace {
+                //We filter out these spaces so the cpu player doesn't
+                //waste an Ace flying somehere that doesn't change the situation
+                //TODO check this works on overlapping power blocks
+                let undesired_coords: HashSet<(i8, i8)> = power_blocks
+                    .iter()
+                    .map(|block| block_to_coords(*block))
+                    .filter(|coords| coords.iter().any(|key| key == target))
+                    .flat_map(|coords| coords.to_vec().into_iter())
+                    .collect();
+
+                let filtered_occupied_spaces = occupied_spaces
+                    .iter()
+                    .filter(|coord| !undesired_coords.contains(coord));
+
+                let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
+                    .iter()
+                    .filter(|key| board.get(key).is_none())
+                    .collect();
+
+                //2 for 1 if possible
+                adjacent_empty_spaces.sort_by_key(|key| {
+                    if empty_disruption_targets.contains(key) {
+                        //keep at the front
+                        0u8
+                    } else {
+                        //move to the end
+                        255u8
+                    }
+                });
+
+                //Find suggested place to fly from
+                for source_coord in filtered_occupied_spaces {
+                    let possible_targets = fly_from_targets(board, source_coord);
+                    for target_coord in adjacent_empty_spaces.iter() {
+                        if possible_targets.contains(target_coord) {
+                            return Some(Plan::FlySpecific(*source_coord, **target_coord));
+                        }
+                    }
+                }
+            }
+
+            let adjacent_to_target = adjacent_keys
+                .iter()
+                .any(|key| is_occupied_by(&board, key, colour));
+
+            if adjacent_to_target {
+                return Some(Plan::Move(*target));
+            }
+        }
+    }
+
+    let build_targets = get_all_build_targets_set(board, colour);
+
+    let buildable_empty_disruption_targets: HashSet<(i8, i8)> = build_targets
+        .iter()
+        .filter(|key| empty_disruption_targets.contains(key))
+        .cloned()
+        .collect();
+
+    println!(
+        "buildable_empty_disruption_targets: {:?}",
+        buildable_empty_disruption_targets
+    );
+
+    if has_number_card {
+        for target in empty_disruption_targets.iter() {
+            if build_targets.contains(target) {
+                return Some(Plan::Build(*target));
+            }
+        }
+    }
+
 
     for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
@@ -4345,6 +4466,20 @@ fn get_plan(
             };
 
             if adjacent_to_target && !occupys_target {
+                if has_number_card {
+                    let target_blocks = completable_power_blocks
+                        .iter()
+                        .filter(|b| b.keys.contains(&target));
+
+                    for block in target_blocks {
+                        for coord in block.keys.iter() {
+                            if buildable_empty_disruption_targets.contains(coord) {
+                                return Some(Plan::Build(*coord));
+                            }
+                        }
+                    }
+                }
+
                 return Some(Plan::Move(target));
             } else if stashes[colour].is_full() {
                 let possible_plan = adjacent_keys
@@ -4397,17 +4532,6 @@ fn get_plan(
                         }
                     }
                 }
-            }
-        }
-    }
-
-    let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
-
-    if has_number_card {
-        let build_targets = get_all_build_targets_set(board, colour);
-        for target in empty_disruption_targets.iter() {
-            if build_targets.contains(target) {
-                return Some(Plan::Build(*target));
             }
         }
     }
@@ -4536,8 +4660,6 @@ mod plan_tests {
         let mut board = green_vertical_almost_power_block_board();
 
         {
-            let pieces: SpacePieces = Default::default();
-
             board.insert(
                 (0, -1),
                 Space {
@@ -4545,8 +4667,7 @@ mod plan_tests {
                         suit: Diamonds,
                         value: Two,
                     },
-                    pieces,
-                    offset: 0,
+                    ..Default::default()
                 },
             );
         }
@@ -5448,6 +5569,61 @@ mod plan_tests {
                 }
             }
         }
+
+        fn build_rather_than_move_if_other_player_would_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Hearts, Two);
+            add_piece(&mut board, (0,0), Green, Pips::Two);
+
+            add_space(&mut board, (0,1), Spades, Two);
+            add_piece(&mut board, (0,1), Green, Pips::One);
+
+            add_space(&mut board, (1,1), Clubs, Two);
+            add_piece(&mut board, (1,1), Red, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Three);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (2,0), Clubs, Three);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Four}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Build((2,1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
     }
 
     #[test]
@@ -5455,6 +5631,7 @@ mod plan_tests {
         //this test is slow
         //TODO find out why (is `lazy_static` being weird?)
         //and make sure it isn't affecting the actual game.
+        //An easy thing to try would be a faster hasher
         quickcheck::QuickCheck::new()
             .tests(10)
             .quickcheck(break_up_two_blocks_when_possible as fn(usize) -> bool)
