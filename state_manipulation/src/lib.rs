@@ -4516,7 +4516,6 @@ fn get_plan(
         for adjacent in adjacent_filled_keys.iter() {
             for &(x, y) in FOUR_WAY_OFFSETS.iter() {
                 if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                    //TODO prefer moving pieces not on a power block
                     return Some(Plan::Move(*adjacent));
                 }
             }
@@ -5608,6 +5607,66 @@ mod plan_tests {
 
             match plan {
                 Some(Plan::Build((2,1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+        fn prefer_moving_off_of_non_power_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,1), Spades, Eight);
+            add_piece(&mut board, (0,1), Red, Pips::One);
+
+            add_space(&mut board, (0,0), Hearts, Two);
+            add_piece(&mut board, (0,0), Green, Pips::Two);
+
+            add_space(&mut board, (0,-1), Spades, Two);
+            add_piece(&mut board, (0,-1), Green, Pips::One);
+            add_piece(&mut board, (0,-1), Green, Pips::One);
+
+            add_space(&mut board, (1,-1), Clubs, Two);
+
+            add_space(&mut board, (1,0), Spades, Three);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+            add_piece(&mut board, (1,0), Red, Pips::One);
+
+            add_space(&mut board, (2,0), Clubs, Three);
+
+            add_space(&mut board, (3,0), Clubs, Three);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Four}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((0,0)))|Some(Plan::MoveSpecific(_, (0,0))) => {
                     true
                 },
                 _ => {
