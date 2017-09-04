@@ -4324,47 +4324,17 @@ fn get_plan(
             };
 
 
-            //Try to fly next to the target
-            //TODO Reduce duplication
             if has_ace {
-                //We filter out these spaces so the cpu player doesn't
-                //waste an Ace flying somehere that doesn't change the situation
-                //TODO check this works on overlapping power blocks
-                let undesired_coords: HashSet<(i8, i8)> = power_blocks
-                    .iter()
-                    .map(|block| block_to_coords(*block))
-                    .filter(|coords| coords.iter().any(|key| key == target))
-                    .flat_map(|coords| coords.to_vec().into_iter())
-                    .collect();
-
-                let filtered_occupied_spaces = occupied_spaces
-                    .iter()
-                    .filter(|coord| !undesired_coords.contains(coord));
-
-                let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
-                    .iter()
-                    .filter(|key| board.get(key).is_none())
-                    .collect();
-
-                //2 for 1 if possible
-                adjacent_empty_spaces.sort_by_key(|key| {
-                    if empty_disruption_targets.contains(key) {
-                        //keep at the front
-                        0u8
-                    } else {
-                        //move to the end
-                        255u8
-                    }
-                });
-
-                //Find suggested place to fly from
-                for source_coord in filtered_occupied_spaces {
-                    let possible_targets = fly_from_targets(board, source_coord);
-                    for target_coord in adjacent_empty_spaces.iter() {
-                        if possible_targets.contains(target_coord) {
-                            return Some(Plan::FlySpecific(*source_coord, **target_coord));
-                        }
-                    }
+                //Try to fly next to the target
+                if let Some(f_s) = get_fly_specific(
+                    board,
+                    &power_blocks,
+                    &empty_disruption_targets,
+                    &adjacent_keys,
+                    &occupied_spaces,
+                    &target,
+                ) {
+                    return Some(f_s);
                 }
             }
 
@@ -4491,46 +4461,17 @@ fn get_plan(
                 }
             }
 
-            //Try to fly next to the target
             if has_ace {
-                //We filter out these spaces so the cpu player doesn't
-                //waste an Ace flying somehere that doesn't change the situation
-                //TODO check this works on overlapping power blocks
-                let undesired_coords: HashSet<(i8, i8)> = power_blocks
-                    .iter()
-                    .map(|block| block_to_coords(*block))
-                    .filter(|coords| coords.iter().any(|key| *key == target))
-                    .flat_map(|coords| coords.to_vec().into_iter())
-                    .collect();
-
-                let filtered_occupied_spaces = occupied_spaces
-                    .iter()
-                    .filter(|coord| !undesired_coords.contains(coord));
-
-                let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
-                    .iter()
-                    .filter(|key| board.get(key).is_none())
-                    .collect();
-
-                //2 for 1 if possible
-                adjacent_empty_spaces.sort_by_key(|key| {
-                    if empty_disruption_targets.contains(key) {
-                        //keep at the front
-                        0u8
-                    } else {
-                        //move to the end
-                        255u8
-                    }
-                });
-
-                //Find suggested place to fly from
-                for source_coord in filtered_occupied_spaces {
-                    let possible_targets = fly_from_targets(board, source_coord);
-                    for target_coord in adjacent_empty_spaces.iter() {
-                        if possible_targets.contains(target_coord) {
-                            return Some(Plan::FlySpecific(*source_coord, **target_coord));
-                        }
-                    }
+                //Try to fly next to the target
+                if let Some(f_s) = get_fly_specific(
+                    board,
+                    &power_blocks,
+                    &empty_disruption_targets,
+                    &adjacent_keys,
+                    &occupied_spaces,
+                    &target,
+                ) {
+                    return Some(f_s);
                 }
             }
         }
@@ -4578,6 +4519,57 @@ fn get_plan(
                     //TODO prefer moving pieces not on a power block
                     return Some(Plan::Move(*adjacent));
                 }
+            }
+        }
+    }
+
+    None
+}
+
+fn get_fly_specific(
+    board: &Board,
+    power_blocks: &Vec<Block>,
+    empty_disruption_targets: &Vec<(i8, i8)>,
+    adjacent_keys: &Vec<(i8, i8)>,
+    occupied_spaces: &Vec<(i8, i8)>,
+    target: &(i8, i8),
+) -> Option<Plan> {
+    //We filter out these spaces so the cpu player doesn't
+    //waste an Ace flying somehere that doesn't change the situation
+    //TODO check this works on overlapping power blocks
+    let undesired_coords: HashSet<(i8, i8)> = power_blocks
+        .iter()
+        .map(|block| block_to_coords(*block))
+        .filter(|coords| coords.iter().any(|key| key == target))
+        .flat_map(|coords| coords.to_vec().into_iter())
+        .collect();
+
+    let filtered_occupied_spaces = occupied_spaces
+        .iter()
+        .filter(|coord| !undesired_coords.contains(coord));
+
+    let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
+        .iter()
+        .filter(|key| board.get(key).is_none())
+        .collect();
+
+    //2 for 1 if possible
+    adjacent_empty_spaces.sort_by_key(|key| {
+        if empty_disruption_targets.contains(key) {
+            //keep at the front
+            0u8
+        } else {
+            //move to the end
+            255u8
+        }
+    });
+
+    //Find suggested place to fly from
+    for source_coord in filtered_occupied_spaces {
+        let possible_targets = fly_from_targets(board, source_coord);
+        for target_coord in adjacent_empty_spaces.iter() {
+            if possible_targets.contains(target_coord) {
+                return Some(Plan::FlySpecific(*source_coord, **target_coord));
             }
         }
     }
