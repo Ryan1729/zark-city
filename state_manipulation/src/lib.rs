@@ -4420,14 +4420,21 @@ fn get_plan(
 
                 if let Some(pip_max) = pip_budget {
                     let possible_target_piece = board.get(&target).and_then(|space| {
-                        let other_player_pieces = space.pieces.filtered_indicies(|p| {
+                        let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
                             p.colour != colour && u8::from(p.pips) <= pip_max
                             //Don't give your opponent the ability to hatch
-                            && stashes[colour].used_count() < STASH_MAX - 1
+                            && stashes[p.colour].used_count() < STASH_MAX - 1
                         });
 
-                        //TODO how should we pick which colour to target?
-                        rng.choose(&other_player_pieces).cloned()
+                        other_player_pieces.sort_by_key(|&i| {
+                            space
+                                .pieces
+                                .get(i)
+                                .map(|p| stashes[p.colour].used_count())
+                                .unwrap_or(0)
+                        });
+
+                        other_player_pieces.pop()
                     });
                     if let Some(target_piece) = possible_target_piece {
                         return Some(Plan::ConvertSlashDemolish(target, target_piece));
