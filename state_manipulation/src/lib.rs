@@ -4493,13 +4493,17 @@ fn get_plan(
 
         for target in empty_disruption_targets.iter() {
             for source in occupied_disruption_targets.iter() {
-                return Some(Plan::FlySpecific(*source, *target));
+                if flight_does_not_create_power_block(&board, *source, *target) {
+                    return Some(Plan::FlySpecific(*source, *target));
+                }
             }
         }
 
         for target in empty_disruption_targets.iter() {
             for source in occupied_spaces.iter() {
-                return Some(Plan::FlySpecific(*source, *target));
+                if flight_does_not_create_power_block(&board, *source, *target) {
+                    return Some(Plan::FlySpecific(*source, *target));
+                }
             }
         }
     }
@@ -4575,12 +4579,30 @@ fn get_fly_specific(
         let possible_targets = fly_from_targets(board, source_coord);
         for target_coord in adjacent_empty_spaces.iter() {
             if possible_targets.contains(target_coord) {
-                return Some(Plan::FlySpecific(*source_coord, **target_coord));
+                if flight_does_not_create_power_block(&board, *source_coord, **target_coord) {
+                    return Some(Plan::FlySpecific(*source_coord, **target_coord));
+                }
             }
         }
     }
 
     None
+}
+
+fn flight_does_not_create_power_block(board: &Board, source: (i8, i8), target: (i8, i8)) -> bool {
+    if board.contains_key(&source) {
+        let power_block_count = power_blocks(board).len();
+        let mut board_copy = board.clone();
+        if let Some(space) = board_copy.remove(&source) {
+            board_copy.insert(target, space);
+
+            power_blocks(&board_copy).len() <= power_block_count
+        } else {
+            true
+        }
+    } else {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -5679,6 +5701,61 @@ mod plan_tests {
                 _ => {
                     println!("plan was {:?}", plan);
                     false
+                }
+            }
+        }
+
+        fn do_not_fly_a_power_block_over_to_someone_else(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,-1), Spades, Two);
+            add_piece(&mut board, (0,-1), Green, Pips::One);
+            add_piece(&mut board, (0,-1), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Clubs, Two);
+            add_piece(&mut board, (1,0), Green, Pips::Two);
+
+            add_space(&mut board, (1,-1), Spades, Eight);
+
+            add_space(&mut board, (2,0), Spades, Three);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            add_space(&mut board, (3,0), Hearts, Two);
+            add_piece(&mut board, (3,0), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Ace}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::FlySpecific(_, (0,0))) => {
+                    false
+                },
+                _ => {
+                    true
                 }
             }
         }
