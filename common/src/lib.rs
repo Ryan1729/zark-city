@@ -112,7 +112,7 @@ pub enum Highlighted {
     PlayerOccupation,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Participant {
     Player,
     Cpu(usize),
@@ -235,6 +235,21 @@ impl Stash {
 
     pub fn used_count(&self) -> u8 {
         STASH_MAX - u8::from(self.one_pip) - u8::from(self.two_pip) - u8::from(self.three_pip)
+    }
+
+    pub fn available_sizes_descending(&self) -> Vec<Pips> {
+        let mut available_sizes = Pips::all_values();
+
+        available_sizes.retain(|&pips| self[pips] != NoneLeft);
+
+        available_sizes.sort_by_key(|&pips| match self[pips] {
+            NoneLeft => 3,
+            OneLeft => 2,
+            TwoLeft => 1,
+            ThreeLeft => 0,
+        });
+
+        available_sizes
     }
 }
 

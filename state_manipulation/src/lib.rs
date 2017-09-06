@@ -1876,9 +1876,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     }
 
                                     let stash = &stashes[colour];
-                                    let mut available_sizes = Pips::all_values();
-
-                                    available_sizes.retain(|&pips| stash[pips] != NoneLeft);
+                                    let available_sizes = stash.available_sizes_descending();
 
                                     type Pair = (((i8, i8), usize), Pips);
 
@@ -1966,12 +1964,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         match selections {
                                             Some((selected_indicies, true, cards_owed)) => {
                                                 //Convert
-                                                for &pips in
-                                                    vec![Pips::Three, Pips::Two, Pips::One].iter()
+                                                for &pips in stashes[colour]
+                                                    .available_sizes_descending()
+                                                    .iter()
                                                 {
                                                     if pips <= piece.pips {
                                                         if let Some(stash_piece) =
                                                             stashes[colour].remove(pips)
+                                                        //culprit
                                                         {
                                                             if let Some(old_piece) =
                                                                 space.pieces.get_mut(piece_index)
@@ -2778,7 +2778,10 @@ fn place_card(
 }
 
 fn cpu_player_count(state: &State) -> usize {
-    state.cpu_hands.len()
+    cpu_player_count_stashes(&state.stashes)
+}
+fn cpu_player_count_stashes(stashes: &Stashes) -> usize {
+    stashes.cpu_stashes.len()
 }
 
 fn next_participant(cpu_player_count: usize, participant: Participant) -> Participant {
@@ -4055,6 +4058,21 @@ fn active_colours(stashes: &Stashes) -> Vec<PieceColour> {
 
     colours
 }
+fn other_active_colours(stashes: &Stashes, colour: PieceColour) -> Vec<PieceColour> {
+    let mut colours = Vec::new();
+
+    if colour != stashes.player_stash.colour {
+        colours.push(stashes.player_stash.colour);
+    }
+
+    for stash in stashes.cpu_stashes.iter() {
+        if colour != stash.colour {
+            colours.push(stash.colour);
+        }
+    }
+
+    colours
+}
 
 fn get_winning_plan(
     board: &Board,
@@ -4163,6 +4181,55 @@ fn get_plan(
         println!("No winning plan");
     }
 
+
+    let other_winning_plans: Vec<Plan> = {
+        let other_colours = other_active_colours(stashes, colour);
+        let mut other_winning_plans = Vec::new();
+
+        let board_cards: Vec<Card> = board.values().map(|s| s.card.clone()).collect();
+
+        let mut full_hand = Card::all_values();
+        full_hand.retain(|c| !(hand.contains(c) || board_cards.contains(c)));
+
+        for current_colour in other_colours {
+            if let Some(plan) = get_winning_plan(board, stashes, &full_hand, current_colour) {
+                if let Some(participant) = colour_to_participant(stashes, current_colour) {
+                    other_winning_plans.push((participant, plan));
+                }
+            }
+        }
+        //Prevent whoever will win next fromk winning
+        let order_keys = {
+            let mut order_keys = HashMap::new();
+            if let Some(participant) = colour_to_participant(stashes, colour) {
+                order_keys.insert(participant, 0);
+
+                let mut counter: u8 = 1;
+                let mut current_participant = participant;
+                loop {
+                    current_participant =
+                        next_participant(cpu_player_count_stashes(stashes), current_participant);
+
+                    order_keys.insert(current_participant, counter);
+
+                    counter += 1;
+
+                    if current_participant == participant || counter == 255 {
+                        break;
+                    }
+                }
+            }
+
+            order_keys
+        };
+
+        other_winning_plans.sort_by_key(|&(participant, _)| {
+            order_keys.get(&participant).map(|&k| k).unwrap_or(255u8)
+        });
+
+        other_winning_plans.iter().map(|&(_, plan)| plan).collect()
+    };
+
     let power_blocks = power_blocks(board);
 
     let mut completable_power_blocks = completable_power_blocks(board);
@@ -4180,7 +4247,41 @@ fn get_plan(
         !has_card_to_complete
     });
 
-    let (disruption_targets, empty_disruption_targets) = {
+    let (disruption_targets, empty_disruption_targets) = if other_winning_plans.len() > 0 {
+        //limit disruption to winning prevention
+        let mut disruption_targets = Vec::new();
+        let mut empty_disruption_targets = Vec::new();
+
+        for plan in other_winning_plans {
+            match plan {
+                Plan::Fly(from) => {
+                    disruption_targets.push(from);
+                }
+                Plan::FlySpecific(from, to) => {
+                    disruption_targets.push(from);
+                    empty_disruption_targets.push(to);
+                }
+                Plan::ConvertSlashDemolish(to, _) => {
+                    empty_disruption_targets.push(to);
+                }
+                Plan::Move(from) => {
+                    disruption_targets.push(from);
+                }
+                Plan::MoveSpecific(from, to) => {
+                    disruption_targets.push(from);
+                    empty_disruption_targets.push(to);
+                }
+                Plan::Build(to) => {
+                    empty_disruption_targets.push(to);
+                }
+                Plan::Hatch(to) => {
+                    empty_disruption_targets.push(to);
+                }
+            }
+        }
+
+        (disruption_targets, empty_disruption_targets)
+    } else {
         let mut power_block_targets: Vec<(i8, i8)> = power_blocks
             .iter()
             .cloned()
