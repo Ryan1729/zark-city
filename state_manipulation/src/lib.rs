@@ -4523,8 +4523,12 @@ fn get_plan(
                     let possible_target_piece = board.get(&target).and_then(|space| {
                         let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
                             p.colour != colour && u8::from(p.pips) <= pip_max
-                            //Don't give your opponent the ability to hatch
-                            && stashes[p.colour].used_count() < STASH_MAX - 1
+                            //Don't give your opponent the ability to Hatch
+                            //if there is a completable_power_block
+                            && (
+                                stashes[p.colour].used_count() < STASH_MAX - 1
+                                || completable_power_blocks.len() == 0
+                            )
                         });
 
                         other_player_pieces.sort_by_key(|&i| {
