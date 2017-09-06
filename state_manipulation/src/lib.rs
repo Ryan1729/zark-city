@@ -5751,6 +5751,59 @@ mod plan_tests {
             }
         }
 
+
+        fn move_rather_than_fly_if_other_player_would_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Hearts, Two);
+
+            add_space(&mut board, (1,0), Clubs, Two);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (1,-1), Spades, Two);
+            add_piece(&mut board, (1,-1), Green, Pips::One);
+
+            add_space(&mut board, (2,-1), Clubs, Three);
+            add_piece(&mut board, (2,-1), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Ace}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((1,-1)))|Some(Plan::MoveSpecific((2,-1),(1,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
         fn prefer_moving_off_of_non_power_block(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -5858,6 +5911,60 @@ mod plan_tests {
 
             match plan {
                 Some(Plan::FlySpecific(_, (0,0))) => {
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
+        fn dont_move_from_blocking_two_blocks_to_blocking_one_of_them(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Clubs, Four);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+            add_piece(&mut board, (1,0), Red, Pips::One);
+
+            add_space(&mut board, (1,-1), Clubs, Three);
+            add_piece(&mut board, (1,-1), Green, Pips::One);
+
+            add_space(&mut board, (1,1), Spades, Four);
+
+            add_space(&mut board, (0,1), Diamonds, Four);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Eight}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move(_)) => {
+                    println!("plan was {:?}", plan);
                     false
                 },
                 _ => {
