@@ -4248,10 +4248,20 @@ fn get_plan(
         !has_card_to_complete
     });
 
+    if cfg!(debug_assertions) {
+        if other_winning_plans.len() > 0 {
+            println!(
+                "Found {} other player winning plan(s)",
+                other_winning_plans.len()
+            );
+        }
+    }
+
     let (disruption_targets, empty_disruption_targets) = if other_winning_plans.len() > 0 {
         //limit disruption to winning prevention
         let mut disruption_targets = Vec::new();
         let mut empty_disruption_targets = Vec::new();
+
 
         for plan in other_winning_plans {
             match plan {
@@ -4259,18 +4269,18 @@ fn get_plan(
                     disruption_targets.push(from);
                 }
                 Plan::FlySpecific(from, to) => {
-                    disruption_targets.push(from);
+                    disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, from));
                     empty_disruption_targets.push(to);
                 }
                 Plan::ConvertSlashDemolish(to, _) => {
-                    empty_disruption_targets.push(to);
+                    disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
                 }
-                Plan::Move(from) => {
-                    disruption_targets.push(from);
+                Plan::Move(_from) => {
+                    //no point in disrupting where they were
+                    //TODO is this ever emitted as a winning plan?
                 }
-                Plan::MoveSpecific(from, to) => {
-                    disruption_targets.push(from);
-                    empty_disruption_targets.push(to);
+                Plan::MoveSpecific(_from, to) => {
+                    disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
                 }
                 Plan::Build(to) => {
                     empty_disruption_targets.push(to);
@@ -4280,6 +4290,10 @@ fn get_plan(
                 }
             }
         }
+
+        overlap_priority_sort_and_dedup(&mut disruption_targets);
+
+        overlap_priority_sort_and_dedup(&mut empty_disruption_targets);
 
         (disruption_targets, empty_disruption_targets)
     } else {
@@ -4313,8 +4327,7 @@ fn get_plan(
             <usize>::max_value() - count
         };
 
-        power_block_targets.sort();
-        power_block_targets.dedup();
+        overlap_priority_sort_and_dedup(&mut power_block_targets);
         power_block_targets.sort_by_key(&other_colour_occupation_count_sorter);
 
         let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
@@ -4322,8 +4335,7 @@ fn get_plan(
             .flat_map(|completable| completable.keys.iter().cloned())
             .collect();
 
-        completable_power_block_targets.sort();
-        completable_power_block_targets.dedup();
+        overlap_priority_sort_and_dedup(&mut completable_power_block_targets);
         completable_power_block_targets.sort_by_key(other_colour_occupation_count_sorter);
 
         let disruption_targets: Vec<(i8, i8)> = power_block_targets
@@ -4331,7 +4343,7 @@ fn get_plan(
             .chain(completable_power_block_targets)
             .collect();
 
-        let mut empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+        let empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
             .filter(|completable| {
                 let mut contoller_colours = completable.keys.iter().filter_map(|key| {
@@ -4344,9 +4356,6 @@ fn get_plan(
             })
             .map(|completable| completable.completion_key)
             .collect();
-
-        empty_disruption_targets.sort();
-        empty_disruption_targets.dedup();
 
         (disruption_targets, empty_disruption_targets)
     };
@@ -4363,39 +4372,6 @@ fn get_plan(
     //  * see if other players have a winning move
     //  * if so, look for a move that prevents it
 
-    let other_colour_winnable_blocks: Vec<_> = power_blocks
-        .iter()
-        .filter(|&&block| {
-            let contoller_colours: Vec<PieceColour> = block_to_coords(block)
-                .iter()
-                .filter_map(|key| {
-                    board
-                        .get(key)
-                        .and_then(|space| controller_colour(&space.pieces))
-                })
-                .collect();
-
-            match (
-                contoller_colours.get(0),
-                contoller_colours.get(1),
-                contoller_colours.get(2),
-            ) {
-                (Some(c0), Some(c1), None) |
-                (Some(c0), None, Some(c1)) |
-                (None, Some(c0), Some(c1)) if *c0 != colour && c0 == c1 =>
-                {
-                    true
-                }
-                _ => false,
-            }
-        })
-        .collect();
-
-    println!(
-        "other_colour_winnable_blocks {:?}",
-        other_colour_winnable_blocks
-    );
-
     let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
 
     //2 for 1 if possible
@@ -4411,44 +4387,6 @@ fn get_plan(
 
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
     let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
-
-    for &&block in other_colour_winnable_blocks.iter() {
-        for target in block_to_coords(block).iter() {
-            let adjacent_keys: Vec<_> = {
-                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
-                    .iter()
-                    .map(|&(x, y)| (x + target.0, y + target.1))
-                    .collect();
-
-                rng.shuffle(&mut adjacent_keys);
-
-                adjacent_keys
-            };
-
-
-            if has_ace {
-                //Try to fly next to the target
-                if let Some(f_s) = get_fly_specific(
-                    board,
-                    &power_blocks,
-                    &empty_disruption_targets,
-                    &adjacent_keys,
-                    &occupied_spaces,
-                    &target,
-                ) {
-                    return Some(f_s);
-                }
-            }
-
-            let adjacent_to_target = adjacent_keys
-                .iter()
-                .any(|key| is_occupied_by(&board, key, colour));
-
-            if adjacent_to_target {
-                return Some(Plan::Move(*target));
-            }
-        }
-    }
 
     let build_targets = get_all_build_targets_set(board, colour);
 
@@ -4640,6 +4578,38 @@ fn get_plan(
     }
 
     None
+}
+
+/// Get all coords in power blocks that contain the given coord.s
+/// Overlaps result in duplicates.
+fn get_all_power_block_coords(power_blocks: &Vec<Block>, coord: (i8, i8)) -> Vec<(i8, i8)> {
+    let mut result = Vec::new();
+
+    for block in power_blocks.iter() {
+        let block_coords = block_to_coords(*block);
+        if block_coords.contains(&coord) {
+            result.extend(block_coords.iter());
+        }
+    }
+
+    result
+}
+
+//sort by occurence (highest occurance first) than deduo
+fn overlap_priority_sort_and_dedup(coords: &mut Vec<(i8, i8)>) {
+    let mut counts = HashMap::new();
+
+
+    for coord in coords.iter() {
+        if !counts.contains_key(coord) {
+            counts.insert(*coord, coords.iter().filter(|&c| c == coord).count());
+        }
+    }
+
+    coords.sort_by_key(|coord| {
+        <usize>::max_value() - counts.get(coord).unwrap_or(&0)
+    });
+    coords.dedup();
 }
 
 fn get_fly_specific(
@@ -5751,8 +5721,7 @@ mod plan_tests {
             }
         }
 
-
-        fn move_rather_than_fly_if_other_player_would_win(seed: usize) -> bool {
+        fn move_or_c_slash_d_if_other_player_would_win_otherwise(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
 
@@ -5794,7 +5763,9 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((1,-1)))|Some(Plan::MoveSpecific((2,-1),(1,-1))) => {
+                Some(Plan::Move((1,-1)))
+                | Some(Plan::MoveSpecific((2,-1),(1,-1)))
+                | Some(Plan::ConvertSlashDemolish((1,-1), _)) => {
                     true
                 },
                 _ => {
