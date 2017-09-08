@@ -5774,6 +5774,67 @@ mod plan_tests {
                 }
             }
         }
+        fn dont_fly_away_giving_another_player_the_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Hearts, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (0,-1), Clubs, Two);
+            add_piece(&mut board, (0,-1), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Diamonds, Three);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (1,1), Spades, Two);
+            add_piece(&mut board, (1,1), Green, Pips::One);
+
+            add_space(&mut board, (0,1), Clubs, Five);
+
+            add_space(&mut board, (0,2), Clubs, Five);
+
+            add_space(&mut board, (0,-2), Hearts, Seven);
+            add_piece(&mut board, (0,-2), Red, Pips::One);
+
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Ace}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Fly(_))
+                | Some(Plan::FlySpecific(_,_))
+                 => {
+                     println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
 
         fn prefer_moving_off_of_non_power_block(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
