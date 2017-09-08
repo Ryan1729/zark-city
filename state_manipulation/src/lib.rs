@@ -2627,7 +2627,7 @@ fn perform_move(board: &mut Board, from: (i8, i8), to: (i8, i8), piece_index: us
 }
 
 fn get_winners(board: &Board, stashes: &Stashes) -> (Option<Participant>, Option<Participant>) {
-    let power_blocks = power_blocks(board);
+    let power_blocks = get_power_blocks(board);
 
     // There is a way to have two winners: A player can move
     // a piece from a contesed area to another whihc gives them a power block,
@@ -3227,7 +3227,7 @@ enum Block {
 }
 use Block::*;
 
-fn power_blocks(board: &Board) -> Vec<Block> {
+fn get_power_blocks(board: &Board) -> Vec<Block> {
     let mut result = Vec::new();
 
     for &(x, y) in board.keys() {
@@ -3430,7 +3430,7 @@ enum CombinedBlock {
 }
 use CombinedBlock::*;
 fn combined_power_blocks(board: &Board) -> Vec<CombinedBlock> {
-    power_blocks(board)
+    get_power_blocks(board)
         .iter()
         .cloned()
         .map(Complete)
@@ -4162,6 +4162,109 @@ enum Plan {
     Hatch((i8, i8)),
 }
 
+
+/// Get all coords in power blocks that contain the given coord.s
+/// Overlaps result in duplicates.
+fn get_all_power_block_coords(power_blocks: &Vec<Block>, coord: (i8, i8)) -> Vec<(i8, i8)> {
+    let mut result = Vec::new();
+
+    for block in power_blocks.iter() {
+        let block_coords = block_to_coords(*block);
+        if block_coords.contains(&coord) {
+            result.extend(block_coords.iter());
+        }
+    }
+
+    result
+}
+
+//sort by occurence (highest occurance first) than deduo
+fn overlap_priority_sort_and_dedup(coords: &mut Vec<(i8, i8)>) {
+    let mut counts = HashMap::new();
+
+
+    for coord in coords.iter() {
+        if !counts.contains_key(coord) {
+            counts.insert(*coord, coords.iter().filter(|&c| c == coord).count());
+        }
+    }
+
+    coords.sort_by_key(|coord| {
+        <usize>::max_value() - counts.get(coord).unwrap_or(&0)
+    });
+    coords.dedup();
+}
+
+fn get_fly_specific(
+    board: &Board,
+    power_blocks: &Vec<Block>,
+    empty_disruption_targets: &Vec<(i8, i8)>,
+    adjacent_keys: &Vec<(i8, i8)>,
+    occupied_spaces: &Vec<(i8, i8)>,
+    target: &(i8, i8),
+) -> Option<Plan> {
+    //We filter out these spaces so the cpu player doesn't
+    //waste an Ace flying somehere that doesn't change the situation
+    //TODO check this works on overlapping power blocks
+    let undesired_coords: HashSet<(i8, i8)> = power_blocks
+        .iter()
+        .map(|block| block_to_coords(*block))
+        .filter(|coords| coords.iter().any(|key| key == target))
+        .flat_map(|coords| coords.to_vec().into_iter())
+        .collect();
+
+    let filtered_occupied_spaces = occupied_spaces
+        .iter()
+        .filter(|coord| !undesired_coords.contains(coord));
+
+    let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
+        .iter()
+        .filter(|key| board.get(key).is_none())
+        .collect();
+
+    //2 for 1 if possible
+    adjacent_empty_spaces.sort_by_key(|key| {
+        if empty_disruption_targets.contains(key) {
+            //keep at the front
+            0u8
+        } else {
+            //move to the end
+            255u8
+        }
+    });
+
+    //Find suggested place to fly from
+    for source_coord in filtered_occupied_spaces {
+        let possible_targets = fly_from_targets(board, source_coord);
+        for target_coord in adjacent_empty_spaces.iter() {
+            if possible_targets.contains(target_coord) {
+                if flight_does_not_create_power_block(&board, *source_coord, **target_coord) {
+                    return Some(Plan::FlySpecific(*source_coord, **target_coord));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn flight_does_not_create_power_block(board: &Board, source: (i8, i8), target: (i8, i8)) -> bool {
+    if board.contains_key(&source) {
+        let power_block_count = get_power_blocks(board).len();
+        let mut board_copy = board.clone();
+        if let Some(space) = board_copy.remove(&source) {
+            board_copy.insert(target, space);
+
+            get_power_blocks(&board_copy).len() <= power_block_count
+        } else {
+            true
+        }
+    } else {
+        true
+    }
+}
+
+
 fn get_plan(
     board: &Board,
     stashes: &Stashes,
@@ -4231,7 +4334,7 @@ fn get_plan(
         other_winning_plans.iter().map(|&(_, plan)| plan).collect()
     };
 
-    let power_blocks = power_blocks(board);
+    let power_blocks = get_power_blocks(board);
 
     let mut completable_power_blocks = completable_power_blocks(board);
 
@@ -4269,7 +4372,17 @@ fn get_plan(
                     disruption_targets.push(from);
                 }
                 Plan::FlySpecific(from, to) => {
-                    disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, from));
+                    let mut board_copy = board.clone();
+
+                    if let Some(moved) = board_copy.remove(&from) {
+                        board_copy.insert(to, moved);
+
+                        let mut power_block_coords =
+                            get_all_power_block_coords(&get_power_blocks(&board_copy), to);
+                        power_block_coords.retain(|k| *k != to);
+
+                        disruption_targets.append(&mut power_block_coords);
+                    }
                     empty_disruption_targets.push(to);
                 }
                 Plan::ConvertSlashDemolish(to, _) => {
@@ -4385,7 +4498,9 @@ fn get_plan(
         }
     });
 
+
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
+    println!("hand : {:?}, has_ace {}", hand, has_ace);
     let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
 
     let build_targets = get_all_build_targets_set(board, colour);
@@ -4427,7 +4542,7 @@ fn get_plan(
         } else {
             continue;
         }
-
+        println!("target {:?}", target);
         let occupys_target = is_occupied_by(&board, &target, colour);
 
         if occupys_target && has_ace {
@@ -4511,19 +4626,33 @@ fn get_plan(
                     return possible_plan;
                 }
             }
+        }
+    }
 
-            if has_ace {
-                //Try to fly next to the target
-                if let Some(f_s) = get_fly_specific(
-                    board,
-                    &power_blocks,
-                    &empty_disruption_targets,
-                    &adjacent_keys,
-                    &occupied_spaces,
-                    &target,
-                ) {
-                    return Some(f_s);
-                }
+    if has_ace {
+        for &target in disruption_targets.iter() {
+            //Try to fly next to the target
+
+            let adjacent_keys: Vec<_> = {
+                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .collect();
+
+                rng.shuffle(&mut adjacent_keys);
+
+                adjacent_keys
+            };
+
+            if let Some(f_s) = get_fly_specific(
+                board,
+                &power_blocks,
+                &empty_disruption_targets,
+                &adjacent_keys,
+                &occupied_spaces,
+                &target,
+            ) {
+                return Some(f_s);
             }
         }
     }
@@ -4578,107 +4707,6 @@ fn get_plan(
     }
 
     None
-}
-
-/// Get all coords in power blocks that contain the given coord.s
-/// Overlaps result in duplicates.
-fn get_all_power_block_coords(power_blocks: &Vec<Block>, coord: (i8, i8)) -> Vec<(i8, i8)> {
-    let mut result = Vec::new();
-
-    for block in power_blocks.iter() {
-        let block_coords = block_to_coords(*block);
-        if block_coords.contains(&coord) {
-            result.extend(block_coords.iter());
-        }
-    }
-
-    result
-}
-
-//sort by occurence (highest occurance first) than deduo
-fn overlap_priority_sort_and_dedup(coords: &mut Vec<(i8, i8)>) {
-    let mut counts = HashMap::new();
-
-
-    for coord in coords.iter() {
-        if !counts.contains_key(coord) {
-            counts.insert(*coord, coords.iter().filter(|&c| c == coord).count());
-        }
-    }
-
-    coords.sort_by_key(|coord| {
-        <usize>::max_value() - counts.get(coord).unwrap_or(&0)
-    });
-    coords.dedup();
-}
-
-fn get_fly_specific(
-    board: &Board,
-    power_blocks: &Vec<Block>,
-    empty_disruption_targets: &Vec<(i8, i8)>,
-    adjacent_keys: &Vec<(i8, i8)>,
-    occupied_spaces: &Vec<(i8, i8)>,
-    target: &(i8, i8),
-) -> Option<Plan> {
-    //We filter out these spaces so the cpu player doesn't
-    //waste an Ace flying somehere that doesn't change the situation
-    //TODO check this works on overlapping power blocks
-    let undesired_coords: HashSet<(i8, i8)> = power_blocks
-        .iter()
-        .map(|block| block_to_coords(*block))
-        .filter(|coords| coords.iter().any(|key| key == target))
-        .flat_map(|coords| coords.to_vec().into_iter())
-        .collect();
-
-    let filtered_occupied_spaces = occupied_spaces
-        .iter()
-        .filter(|coord| !undesired_coords.contains(coord));
-
-    let mut adjacent_empty_spaces: Vec<_> = adjacent_keys
-        .iter()
-        .filter(|key| board.get(key).is_none())
-        .collect();
-
-    //2 for 1 if possible
-    adjacent_empty_spaces.sort_by_key(|key| {
-        if empty_disruption_targets.contains(key) {
-            //keep at the front
-            0u8
-        } else {
-            //move to the end
-            255u8
-        }
-    });
-
-    //Find suggested place to fly from
-    for source_coord in filtered_occupied_spaces {
-        let possible_targets = fly_from_targets(board, source_coord);
-        for target_coord in adjacent_empty_spaces.iter() {
-            if possible_targets.contains(target_coord) {
-                if flight_does_not_create_power_block(&board, *source_coord, **target_coord) {
-                    return Some(Plan::FlySpecific(*source_coord, **target_coord));
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn flight_does_not_create_power_block(board: &Board, source: (i8, i8), target: (i8, i8)) -> bool {
-    if board.contains_key(&source) {
-        let power_block_count = power_blocks(board).len();
-        let mut board_copy = board.clone();
-        if let Some(space) = board_copy.remove(&source) {
-            board_copy.insert(target, space);
-
-            power_blocks(&board_copy).len() <= power_block_count
-        } else {
-            true
-        }
-    } else {
-        true
-    }
 }
 
 #[cfg(test)]
@@ -4785,50 +4813,6 @@ mod plan_tests {
         board
             .get_mut(&key)
             .map(|s| s.pieces.push(Piece { colour, pips }));
-    }
-
-    //I thought that the repeated construction of the table was slow.
-    //Doesn't seem to be the case though.
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    lazy_static! {
-        static ref BREAK_UP_BOARD: HashMap<(i8,i8), Space> = {
-            let mut  board = HashMap::new();
-            // //Non-compleatable power block
-            add_space(&mut board, (0, 0), Diamonds, Six);
-            add_piece(&mut board, (0,0), Red, Pips::One);
-
-            add_space(&mut board, (0, 1), Diamonds, Five);
-            add_piece(&mut board, (0,1), Red, Pips::Two);
-
-            add_space(&mut board, (-1, 1), Hearts, Eight);
-
-            add_space(&mut board, (-1, 0), Spades, Four);
-
-            add_space(&mut board, (-1, 2), Hearts, Four);
-            add_piece(&mut board, (-1, 2), Green, Pips::One);
-
-            add_space(&mut board, (0, 2), Spades, Two);
-
-            add_space(&mut board, (0, -1), Hearts, Seven);
-
-            add_space(&mut board, (1, 0), Clubs, Nine);
-
-            //completable power block
-            add_space(&mut board, (1, 1), Clubs, Four);
-            add_piece(&mut board, (1, 1), Red, Pips::One);
-
-            add_space(&mut board, (1, 2), Diamonds, Four);
-            add_piece(&mut board, (1, 2), Red, Pips::One);
-
-            //disruptable block
-            add_space(&mut board, (-1, -1), Clubs, Ten);
-            add_piece(&mut board, (-1, -1), Green, Pips::Three);
-
-            add_space(&mut board, (0, -2), Spades, Ten);
-            add_piece(&mut board, (0, -2), Green, Pips::Three);
-
-            board
-        };
     }
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -6006,6 +5990,52 @@ mod plan_tests {
         }
     }
 
+
+    //I thought that the repeated construction of the table was slow.
+    //Doesn't seem to be the case though.
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+    lazy_static! {
+            static ref BREAK_UP_BOARD: HashMap<(i8,i8), Space> = {
+                let mut  board = HashMap::new();
+                // //Non-compleatable power block
+                add_space(&mut board, (0, 0), Diamonds, Six);
+                add_piece(&mut board, (0,0), Red, Pips::One);
+
+                add_space(&mut board, (0, 1), Diamonds, Five);
+                add_piece(&mut board, (0,1), Red, Pips::Two);
+
+                add_space(&mut board, (-1, 1), Hearts, Eight);
+
+                add_space(&mut board, (-1, 0), Spades, Four);
+
+                add_space(&mut board, (-1, 2), Hearts, Four);
+                add_piece(&mut board, (-1, 2), Green, Pips::One);
+
+                add_space(&mut board, (0, 2), Spades, Two);
+
+                add_space(&mut board, (0, -1), Hearts, Seven);
+
+                add_space(&mut board, (1, 0), Clubs, Nine);
+
+                //completable power block
+                add_space(&mut board, (1, 1), Clubs, Four);
+                add_piece(&mut board, (1, 1), Red, Pips::One);
+
+                add_space(&mut board, (1, 2), Diamonds, Four);
+                add_piece(&mut board, (1, 2), Red, Pips::One);
+
+                //disruptable block
+                add_space(&mut board, (-1, -1), Clubs, Ten);
+                add_piece(&mut board, (-1, -1), Green, Pips::Three);
+
+                add_space(&mut board, (0, -2), Spades, Ten);
+                add_piece(&mut board, (0, -2), Green, Pips::Three);
+
+                board
+            };
+        }
+
+
     #[test]
     fn test_break_up_two_blocks_when_possible() {
         //this test is slow
@@ -6050,7 +6080,9 @@ mod plan_tests {
         let plan = get_plan(&BREAK_UP_BOARD, &stashes, &hand, &mut rng, Red);
 
         match plan {
+            Some(Plan::Fly((1, 1))) |
             Some(Plan::FlySpecific((1, 1), (-1, -2))) |
+            Some(Plan::Fly((1, 2))) |
             Some(Plan::FlySpecific((1, 2), (-1, -2))) => true,
             _ => {
                 println!("plan was {:?}", plan);
