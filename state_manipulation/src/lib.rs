@@ -3216,7 +3216,7 @@ fn controller_colour(pieces: &SpacePieces) -> Option<PieceColour> {
     possible_colour
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Block {
     Horizontal(i8, (i8, i8, i8)),
     Vertical(i8, (i8, i8, i8)),
@@ -3271,14 +3271,14 @@ fn get_power_blocks(board: &Board) -> Vec<Block> {
     result
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct CompletableBlock {
     keys: [(i8, i8); 2],
     completion: Completion,
     completion_key: (i8, i8),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Completion {
     Unique(Suit, Value),
     ValueMatch(Value),
@@ -4265,6 +4265,111 @@ fn flight_does_not_create_power_block(board: &Board, source: (i8, i8), target: (
 }
 
 
+fn get_high_priority_plan(
+    board: &Board,
+    stashes: &Stashes,
+    hand: &Vec<Card>,
+    rng: &mut StdRng,
+    disruption_targets: &Vec<(i8, i8)>,
+    colour: PieceColour,
+) -> Option<Plan> {
+    let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
+
+    for &target in disruption_targets.iter() {
+        if let Some(space) = board.get(&target) {
+            //It's contested enough if it won't be taken for at least one round.
+            let contested_enough = {
+                let counts = PieceColour::all_values()
+                    .into_iter()
+                    .map(|c| space.pieces.filtered_indicies(|p| p.colour == c).len());
+
+                counts.filter(|&n| n >= 2).count() >= 2
+            };
+
+            if contested_enough {
+                continue;
+            }
+        } else {
+            continue;
+        }
+        println!("target {:?}", target);
+        let occupys_target = is_occupied_by(&board, &target, colour);
+
+        if occupys_target && has_ace {
+            return Some(Plan::Fly(target));
+        } else {
+            let adjacent_keys: Vec<_> = {
+                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .collect();
+
+                rng.shuffle(&mut adjacent_keys);
+
+                adjacent_keys
+            };
+
+            let adjacent_to_target = adjacent_keys
+                .iter()
+                .any(|key| is_occupied_by(&board, key, colour));
+
+
+            if adjacent_to_target || occupys_target {
+                let pip_budget: Option<u8> =
+                    hand.iter()
+                        .fold(None, |acc, card| match (acc, pip_value(&card)) {
+                            (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
+                            (None, pip_value) if pip_value == 0 => None,
+                            (None, pip_value) => Some(pip_value),
+                        });
+
+                if let Some(pip_max) = pip_budget {
+                    let possible_target_piece = board.get(&target).and_then(|space| {
+                        let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
+                            p.colour != colour && u8::from(p.pips) <= pip_max
+                                //Don't give your opponent the ability to Hatch
+                                //if there is a completable_power_block
+                                && (
+                                    stashes[p.colour].used_count() < STASH_MAX - 1
+                                    //TODO confirm this is necessary
+                                    // || completable_power_blocks.len() == 0
+                                )
+                        });
+
+                        other_player_pieces.sort_by_key(|&i| {
+                            space
+                                .pieces
+                                .get(i)
+                                .map(|p| stashes[p.colour].used_count())
+                                .unwrap_or(0)
+                        });
+
+                        other_player_pieces.pop()
+                    });
+                    if let Some(target_piece) = possible_target_piece {
+                        return Some(Plan::ConvertSlashDemolish(target, target_piece));
+                    }
+                }
+            };
+
+            if adjacent_to_target && !occupys_target {
+                return Some(Plan::Move(target));
+            } else if stashes[colour].is_full() {
+                let possible_plan = adjacent_keys
+                    .iter()
+                    .find(|key| !board.contains_key(key))
+                    .map(|target_blank| Plan::Hatch(*target_blank));
+                if possible_plan.is_some() {
+                    return possible_plan;
+                }
+            }
+        }
+    }
+
+    None
+}
+
+
 fn get_plan(
     board: &Board,
     stashes: &Stashes,
@@ -4360,7 +4465,15 @@ fn get_plan(
         }
     }
 
-    let (disruption_targets, empty_disruption_targets) = if other_winning_plans.len() > 0 {
+    let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+    let (
+        unoccupied_disruption_targets,
+        empty_disruption_targets,
+        unoccupied_completable_disruption_targets,
+        occupied_disruption_targets,
+        occupied_completable_disruption_targets,
+    ) = if other_winning_plans.len() > 0 {
         //limit disruption to winning prevention
         let mut disruption_targets = Vec::new();
         let mut empty_disruption_targets = Vec::new();
@@ -4408,14 +4521,14 @@ fn get_plan(
 
         overlap_priority_sort_and_dedup(&mut empty_disruption_targets);
 
-        (disruption_targets, empty_disruption_targets)
+        (
+            disruption_targets,
+            empty_disruption_targets,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
     } else {
-        let mut power_block_targets: Vec<(i8, i8)> = power_blocks
-            .iter()
-            .cloned()
-            .flat_map(|block| block_to_coords(block).to_vec().into_iter())
-            .collect();
-
         let other_colour_occupation_count_sorter = |key: &(i8, i8)| {
             let mut power_block_keys = Vec::new();
 
@@ -4435,26 +4548,73 @@ fn get_plan(
             //how many of those spaces are occupied by other colours
             let count = other_colour_occupation_count(board, &power_block_keys, colour);
 
-
             //put the highest count keys in front
             <usize>::max_value() - count
         };
 
-        overlap_priority_sort_and_dedup(&mut power_block_targets);
-        power_block_targets.sort_by_key(&other_colour_occupation_count_sorter);
+        let sort_and_dedup_targets = |targets: &mut Vec<(i8, i8)>| {
+            overlap_priority_sort_and_dedup(targets);
+            targets.sort_by_key(&other_colour_occupation_count_sorter);
+        };
 
-        let mut completable_power_block_targets: Vec<(i8, i8)> = completable_power_blocks
-            .iter()
-            .flat_map(|completable| completable.keys.iter().cloned())
-            .collect();
+        let (occupied_power_blocks, unoccupied_power_blocks): (Vec<Block>, Vec<Block>) =
+            power_blocks.iter().cloned().partition(|block| {
+                block_to_coords(*block)
+                    .iter()
+                    .any(|key| occupied_spaces.contains(key))
+            });
 
-        overlap_priority_sort_and_dedup(&mut completable_power_block_targets);
-        completable_power_block_targets.sort_by_key(other_colour_occupation_count_sorter);
+        let (mut occupied_disruption_targets, mut unoccupied_disruption_targets): (
+            Vec<(i8, i8)>,
+            Vec<(i8, i8)>,
+        ) = (
+            occupied_power_blocks
+                .iter()
+                .flat_map(|block| block_to_coords(*block).to_vec().into_iter())
+                .collect(),
+            unoccupied_power_blocks
+                .iter()
+                .flat_map(|block| block_to_coords(*block).to_vec().into_iter())
+                .collect(),
+        );
 
-        let disruption_targets: Vec<(i8, i8)> = power_block_targets
-            .into_iter()
-            .chain(completable_power_block_targets)
-            .collect();
+        sort_and_dedup_targets(&mut occupied_disruption_targets);
+
+        unoccupied_disruption_targets.retain(|key| !occupied_disruption_targets.contains(key));
+        sort_and_dedup_targets(&mut unoccupied_disruption_targets);
+
+        let (occupied_completable_power_blocks, unoccupied_completable_power_blocks): (
+            Vec<CompletableBlock>,
+            Vec<CompletableBlock>,
+        ) = completable_power_blocks.iter().partition(|completable| {
+            completable
+                .keys
+                .iter()
+                .any(|key| occupied_spaces.contains(key))
+        });
+
+        let (
+            mut occupied_completable_disruption_targets,
+            mut unoccupied_completable_disruption_targets,
+        ): (Vec<(i8, i8)>, Vec<(i8, i8)>) = (
+            occupied_completable_power_blocks
+                .iter()
+                .flat_map(|completable| completable.keys.iter().cloned())
+                .collect(),
+            unoccupied_completable_power_blocks
+                .iter()
+                .flat_map(|completable| completable.keys.iter().cloned())
+                .collect(),
+        );
+
+
+        sort_and_dedup_targets(&mut occupied_completable_disruption_targets);
+
+        unoccupied_completable_disruption_targets.retain(|key| {
+            !(occupied_completable_disruption_targets.contains(key) ||
+                occupied_disruption_targets.contains(key))
+        });
+        sort_and_dedup_targets(&mut unoccupied_completable_disruption_targets);
 
         let empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
@@ -4470,14 +4630,27 @@ fn get_plan(
             .map(|completable| completable.completion_key)
             .collect();
 
-        (disruption_targets, empty_disruption_targets)
+        (
+            unoccupied_disruption_targets,
+            empty_disruption_targets,
+            unoccupied_completable_disruption_targets,
+            occupied_disruption_targets,
+            occupied_completable_disruption_targets,
+        )
     };
 
     if cfg!(debug_assertions) {
         println!(
-            "disruption_targets {:?}, empty_disruption_targets: {:?}",
-            disruption_targets,
-            empty_disruption_targets
+            "unoccupied_disruption_targets {:?},\n\
+             empty_disruption_targets {:?},\n\
+             unoccupied_completable_disruption_targets {:?},\n\
+             occupied_disruption_targets {:?},\n\
+             occupied_completable_disruption_targets {:?}",
+            unoccupied_disruption_targets,
+            empty_disruption_targets,
+            unoccupied_completable_disruption_targets,
+            occupied_disruption_targets,
+            occupied_completable_disruption_targets,
         );
     }
 
@@ -4485,11 +4658,11 @@ fn get_plan(
     //  * see if other players have a winning move
     //  * if so, look for a move that prevents it
 
-    let mut occupied_spaces = get_all_spaces_occupied_by(board, colour);
-
     //2 for 1 if possible
     occupied_spaces.sort_by_key(|key| {
-        if disruption_targets.contains(key) {
+        if unoccupied_disruption_targets.contains(key) ||
+            unoccupied_completable_disruption_targets.contains(key)
+        {
             //keep at the front
             0u8
         } else {
@@ -4497,7 +4670,6 @@ fn get_plan(
             255u8
         }
     });
-
 
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
     println!("hand : {:?}, has_ace {}", hand, has_ace);
@@ -4524,30 +4696,31 @@ fn get_plan(
         }
     }
 
+    if let Some(plan) = get_high_priority_plan(
+        board,
+        stashes,
+        hand,
+        rng,
+        &unoccupied_disruption_targets,
+        colour,
+    ) {
+        return Some(plan);
+    }
 
-    for &target in disruption_targets.iter() {
-        if let Some(space) = board.get(&target) {
-            //It's contested enough if it won't be taken for at least one round.
-            let contested_enough = {
-                let counts = PieceColour::all_values()
-                    .into_iter()
-                    .map(|c| space.pieces.filtered_indicies(|p| p.colour == c).len());
+    if let Some(plan) = get_high_priority_plan(
+        board,
+        stashes,
+        hand,
+        rng,
+        &unoccupied_completable_disruption_targets,
+        colour,
+    ) {
+        return Some(plan);
+    }
 
-                counts.filter(|&n| n >= 2).count() >= 2
-            };
-
-            if contested_enough {
-                continue;
-            }
-        } else {
-            continue;
-        }
-        println!("target {:?}", target);
-        let occupys_target = is_occupied_by(&board, &target, colour);
-
-        if occupys_target && has_ace {
-            return Some(Plan::Fly(target));
-        } else {
+    if has_number_card {
+        for target in unoccupied_disruption_targets.iter() {
+            //TODO reduce duplication with `get_high_priority_plan`
             let adjacent_keys: Vec<_> = {
                 let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
                     .iter()
@@ -4558,79 +4731,60 @@ fn get_plan(
 
                 adjacent_keys
             };
-
             let adjacent_to_target = adjacent_keys
                 .iter()
                 .any(|key| is_occupied_by(&board, key, colour));
-
-
-            if adjacent_to_target || occupys_target {
-                let pip_budget: Option<u8> =
-                    hand.iter()
-                        .fold(None, |acc, card| match (acc, pip_value(&card)) {
-                            (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
-                            (None, pip_value) if pip_value == 0 => None,
-                            (None, pip_value) => Some(pip_value),
-                        });
-
-                if let Some(pip_max) = pip_budget {
-                    let possible_target_piece = board.get(&target).and_then(|space| {
-                        let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
-                            p.colour != colour && u8::from(p.pips) <= pip_max
-                            //Don't give your opponent the ability to Hatch
-                            //if there is a completable_power_block
-                            && (
-                                stashes[p.colour].used_count() < STASH_MAX - 1
-                                || completable_power_blocks.len() == 0
-                            )
-                        });
-
-                        other_player_pieces.sort_by_key(|&i| {
-                            space
-                                .pieces
-                                .get(i)
-                                .map(|p| stashes[p.colour].used_count())
-                                .unwrap_or(0)
-                        });
-
-                        other_player_pieces.pop()
-                    });
-                    if let Some(target_piece) = possible_target_piece {
-                        return Some(Plan::ConvertSlashDemolish(target, target_piece));
-                    }
-                }
-            };
+            let occupys_target = is_occupied_by(&board, &target, colour);
 
             if adjacent_to_target && !occupys_target {
-                if has_number_card {
-                    let target_blocks = completable_power_blocks
-                        .iter()
-                        .filter(|b| b.keys.contains(&target));
+                let target_blocks = completable_power_blocks
+                    .iter()
+                    .filter(|b| b.keys.contains(&target));
 
-                    for block in target_blocks {
-                        for coord in block.keys.iter() {
-                            if buildable_empty_disruption_targets.contains(coord) {
-                                return Some(Plan::Build(*coord));
-                            }
+                for block in target_blocks {
+                    for coord in block.keys.iter() {
+                        if buildable_empty_disruption_targets.contains(coord) {
+                            return Some(Plan::Build(*coord));
                         }
                     }
                 }
-
-                return Some(Plan::Move(target));
-            } else if stashes[colour].is_full() {
-                let possible_plan = adjacent_keys
+            }
+        }
+        for target in unoccupied_completable_disruption_targets.iter() {
+            //TODO reduce duplication with `get_high_priority_plan`
+            let adjacent_keys: Vec<_> = {
+                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
                     .iter()
-                    .find(|key| !board.contains_key(key))
-                    .map(|target_blank| Plan::Hatch(*target_blank));
-                if possible_plan.is_some() {
-                    return possible_plan;
+                    .map(|&(x, y)| (x + target.0, y + target.1))
+                    .collect();
+
+                rng.shuffle(&mut adjacent_keys);
+
+                adjacent_keys
+            };
+            let adjacent_to_target = adjacent_keys
+                .iter()
+                .any(|key| is_occupied_by(&board, key, colour));
+            let occupys_target = is_occupied_by(&board, &target, colour);
+
+            if adjacent_to_target && !occupys_target {
+                let target_blocks = completable_power_blocks
+                    .iter()
+                    .filter(|b| b.keys.contains(&target));
+
+                for block in target_blocks {
+                    for coord in block.keys.iter() {
+                        if buildable_empty_disruption_targets.contains(coord) {
+                            return Some(Plan::Build(*coord));
+                        }
+                    }
                 }
             }
         }
     }
 
     if has_ace {
-        for &target in disruption_targets.iter() {
+        for &target in unoccupied_disruption_targets.iter() {
             //Try to fly next to the target
 
             let adjacent_keys: Vec<_> = {
@@ -4658,14 +4812,14 @@ fn get_plan(
     }
 
     if has_ace {
-        let occupied_disruption_targets: Vec<_> = disruption_targets
+        let all_occupied_disruption_targets: Vec<_> = occupied_disruption_targets
             .iter()
-            .filter(|key| occupied_spaces.contains(key))
+            .chain(occupied_completable_disruption_targets.iter())
             .cloned()
             .collect();
 
         for target in empty_disruption_targets.iter() {
-            for source in occupied_disruption_targets.iter() {
+            for source in all_occupied_disruption_targets.iter() {
                 if flight_does_not_create_power_block(&board, *source, *target) {
                     return Some(Plan::FlySpecific(*source, *target));
                 }
@@ -4681,7 +4835,13 @@ fn get_plan(
         }
     }
 
-    for &target in disruption_targets.iter() {
+    let all_unoccupied_disruption_targets: Vec<_> = unoccupied_disruption_targets
+        .iter()
+        .chain(unoccupied_completable_disruption_targets.iter())
+        .cloned()
+        .collect();
+
+    for &target in all_unoccupied_disruption_targets.iter() {
         let adjacent_filled_keys: Vec<_> = {
             let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
                 .iter()
@@ -4693,9 +4853,6 @@ fn get_plan(
 
             adjacent_filled_keys
         };
-
-        //TODO should this only happen on completable power blocks?
-        //Walking there when you can't do anything about it seems pointless
 
         for adjacent in adjacent_filled_keys.iter() {
             for &(x, y) in FOUR_WAY_OFFSETS.iter() {
@@ -5988,12 +6145,61 @@ mod plan_tests {
                 }
             }
         }
+
+        fn dont_waste_time_moving_to_anoter_space_on_the_same_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move(_)) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
     }
 
 
     //I thought that the repeated construction of the table was slow.
     //Doesn't seem to be the case though.
-        #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[cfg_attr(rustfmt, rustfmt_skip)]
     lazy_static! {
             static ref BREAK_UP_BOARD: HashMap<(i8,i8), Space> = {
                 let mut  board = HashMap::new();
