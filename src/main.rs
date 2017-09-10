@@ -1902,9 +1902,9 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                     }
                 };
 
-                let pixel_vec : Vec<u8> = match pixels {
-                    image_decoding::DecodingResult::U8(v) => v,
-                    image_decoding::DecodingResult::U16(_) => panic!("We don't support Deep colour yet!"),
+                let pixel_ptr = match pixels {
+                    image_decoding::DecodingResult::U8(ref v) => v.as_ptr() as _,
+                    image_decoding::DecodingResult::U16(ref v) => v.as_ptr() as _,
                 };
 
                 unsafe {
@@ -1926,7 +1926,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         0,
                         external_format,
                         data_type,
-                        pixel_vec.as_ptr() as _,
+                        pixel_ptr,
                     );
                 }
             }
