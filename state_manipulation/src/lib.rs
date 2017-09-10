@@ -2296,6 +2296,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             break 'turn;
                         }
                     }
+
+                    if possible_plan.is_some() {
+                        possible_plan = None;
+                    }
                 }
 
                 //Discard
