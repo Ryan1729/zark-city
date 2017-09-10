@@ -2105,10 +2105,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 } else {
                                     let mut fly_from_targets =
                                         fly_from_targets(&board, &old_coords);
-                                    if let Some(Plan::Fly(_)) = possible_plan {
-                                        //TODO check if there is a place that helps the cpu player
-                                        fly_from_targets.sort_by_key(|key| {
-                                            let adjacent_keys: Vec<_> = {
+                                    if let Some(Plan::Fly(target)) = possible_plan {
+                                        if fly_from_targets.contains(&target) {
+                                            Some(target)
+                                        } else {
+                                            fly_from_targets.sort_by_key(|key| {
+                                                let adjacent_keys: Vec<_> = {
                                                 let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
                                                     .iter()
                                                     .map(|&(x, y)| (x + key.0, y + key.1))
@@ -2119,13 +2121,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 adjacent_keys
                                             };
 
-                                            adjacent_keys
-                                                .iter()
-                                                .filter(|key| board.get(key).is_some())
-                                                .count()
-                                        });
+                                                adjacent_keys
+                                                    .iter()
+                                                    .filter(|key| board.get(key).is_some())
+                                                    .count()
+                                            });
 
-                                        fly_from_targets.pop()
+                                            fly_from_targets.pop()
+                                        }
                                     } else {
                                         rng.choose(&fly_from_targets).cloned()
                                     }
@@ -4715,6 +4718,10 @@ fn get_plan(
         return Some(plan);
     }
 
+    if cfg!(debug_assertions) {
+        println!("looking for lower priority plan");
+    }
+
     if has_number_card {
         for target in unoccupied_disruption_targets.iter() {
             //TODO reduce duplication with `get_high_priority_plan`
@@ -4809,23 +4816,33 @@ fn get_plan(
     }
 
     if has_ace {
+        //`occupied_disruption_targets` and `occupied_completable_disruption_targets`
+        //contain targets in blocks that at least one space of which this player occupies.
+        //We need targets thatare actually occupied by this player.
         let all_occupied_disruption_targets: Vec<_> = occupied_disruption_targets
             .iter()
             .chain(occupied_completable_disruption_targets.iter())
+            .filter(|key| occupied_spaces.contains(key))
             .cloned()
             .collect();
 
-        for target in empty_disruption_targets.iter() {
-            for source in all_occupied_disruption_targets.iter() {
-                if flight_does_not_create_power_block(&board, *source, *target) {
+        for source in all_occupied_disruption_targets.iter() {
+            let possible_targets = fly_from_targets(board, source);
+            for target in empty_disruption_targets.iter() {
+                if possible_targets.contains(target) &&
+                    flight_does_not_create_power_block(&board, *source, *target)
+                {
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }
         }
 
-        for target in empty_disruption_targets.iter() {
-            for source in occupied_spaces.iter() {
-                if flight_does_not_create_power_block(&board, *source, *target) {
+        for source in occupied_spaces.iter() {
+            let possible_targets = fly_from_targets(board, source);
+            for target in empty_disruption_targets.iter() {
+                if possible_targets.contains(target) &&
+                    flight_does_not_create_power_block(&board, *source, *target)
+                {
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }

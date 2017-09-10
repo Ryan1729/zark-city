@@ -1935,7 +1935,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
             }
         }
     }
-    return texture;
+    texture
 }
 
 // based on the rusttype gpu_cache example
