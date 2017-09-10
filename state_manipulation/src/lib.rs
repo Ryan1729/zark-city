@@ -4292,7 +4292,7 @@ fn get_high_priority_plan(
         } else {
             continue;
         }
-        println!("target {:?}", target);
+
         let occupys_target = is_occupied_by(&board, &target, colour);
 
         if occupys_target && has_ace {
@@ -4672,7 +4672,9 @@ fn get_plan(
     });
 
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
-    println!("hand : {:?}, has_ace {}", hand, has_ace);
+    if cfg!(debug_assertions) {
+        println!("hand : {:?}, has_ace {}", hand, has_ace);
+    }
     let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
 
     let build_targets = get_all_build_targets_set(board, colour);
@@ -4682,11 +4684,6 @@ fn get_plan(
         .filter(|key| empty_disruption_targets.contains(key))
         .cloned()
         .collect();
-
-    println!(
-        "buildable_empty_disruption_targets: {:?}",
-        buildable_empty_disruption_targets
-    );
 
     if has_number_card {
         for target in empty_disruption_targets.iter() {
