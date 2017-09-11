@@ -242,11 +242,10 @@ impl Stash {
 
         available_sizes.retain(|&pips| self[pips] != NoneLeft);
 
-        available_sizes.sort_by_key(|&pips| match self[pips] {
-            NoneLeft => 3,
-            OneLeft => 2,
-            TwoLeft => 1,
-            ThreeLeft => 0,
+        available_sizes.sort_by_key(|&pips| match pips {
+            Pips::One => 2,
+            Pips::Two => 1,
+            Pips::Three => 0,
         });
 
         available_sizes
