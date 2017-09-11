@@ -3223,7 +3223,7 @@ fn controller_colour(pieces: &SpacePieces) -> Option<PieceColour> {
     possible_colour
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Block {
     Horizontal(i8, (i8, i8, i8)),
     Vertical(i8, (i8, i8, i8)),
@@ -3276,6 +3276,10 @@ fn get_power_blocks(board: &Board) -> Vec<Block> {
     }
 
     result
+}
+
+fn get_power_block_set(board: &Board) -> HashSet<Block> {
+    get_power_blocks(board).into_iter().collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -4209,6 +4213,7 @@ fn get_fly_specific(
     adjacent_keys: &Vec<(i8, i8)>,
     occupied_spaces: &Vec<(i8, i8)>,
     target: &(i8, i8),
+    colour: PieceColour,
 ) -> Option<Plan> {
     //We filter out these spaces so the cpu player doesn't
     //waste an Ace flying somehere that doesn't change the situation
@@ -4245,7 +4250,12 @@ fn get_fly_specific(
         let possible_targets = fly_from_targets(board, source_coord);
         for target_coord in adjacent_empty_spaces.iter() {
             if possible_targets.contains(target_coord) {
-                if flight_does_not_create_power_block(&board, *source_coord, **target_coord) {
+                if flight_does_not_create_non_private_power_block(
+                    &board,
+                    *source_coord,
+                    **target_coord,
+                    colour,
+                ) {
                     return Some(Plan::FlySpecific(*source_coord, **target_coord));
                 }
             }
@@ -4255,14 +4265,32 @@ fn get_fly_specific(
     None
 }
 
-fn flight_does_not_create_power_block(board: &Board, source: (i8, i8), target: (i8, i8)) -> bool {
+fn flight_does_not_create_non_private_power_block(
+    board: &Board,
+    source: (i8, i8),
+    target: (i8, i8),
+    colour: PieceColour,
+) -> bool {
     if board.contains_key(&source) {
-        let power_block_count = get_power_blocks(board).len();
+        let old_power_block_set = get_power_block_set(board);
         let mut board_copy = board.clone();
         if let Some(space) = board_copy.remove(&source) {
             board_copy.insert(target, space);
 
-            get_power_blocks(&board_copy).len() <= power_block_count
+            let new_power_block_set = get_power_block_set(&board_copy);
+
+            (&new_power_block_set - &old_power_block_set)
+                .iter()
+                .all(|block| {
+                    block_to_coords(*block).iter().all(|coord| {
+                        board_copy
+                            .get(coord)
+                            .map(|space| {
+                                space.pieces.filtered_indicies(|p| p.colour != colour).len() == 0
+                            })
+                            .unwrap_or(true)
+                    })
+                })
         } else {
             true
         }
@@ -4813,7 +4841,9 @@ fn get_plan(
                 &adjacent_keys,
                 &occupied_spaces,
                 &target,
+                colour,
             ) {
+                println!("0");
                 return Some(f_s);
             }
         }
@@ -4834,8 +4864,9 @@ fn get_plan(
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
                 if possible_targets.contains(target) &&
-                    flight_does_not_create_power_block(&board, *source, *target)
+                    flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
+                    println!("1");
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }
@@ -4845,8 +4876,9 @@ fn get_plan(
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
                 if possible_targets.contains(target) &&
-                    flight_does_not_create_power_block(&board, *source, *target)
+                    flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
+                    println!("2");
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }
@@ -6202,9 +6234,70 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move(_)) => {
+                Some(Plan::Move(_))|Some(Plan::MoveSpecific(_, _)) => {
                     println!("plan was {:?}", plan);
                     false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
+        fn dont_waste_time_flying_to_recreate_the_same_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card {suit: Diamonds, value: Ace}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+
+            match plan {
+                Some(Plan::Fly(target))|Some(Plan::FlySpecific(_, target)) => {
+                    let forbidden_targets = vec![
+                        (0,1),
+                        (0,-1),
+                        (1,1),
+                        (1,-1),
+                        (2,0),
+                        (-1, 0)
+                    ];
+                    if forbidden_targets.contains(&target) {
+                        println!("plan was {:?}", plan);
+                        false
+                    } else {
+                         true
+                    }
                 },
                 _ => {
                     true
