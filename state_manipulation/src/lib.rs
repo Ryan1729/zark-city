@@ -1631,6 +1631,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::ConvertSlashDemolish(_, _) => 5,
                             Plan::Move(_) | Plan::MoveSpecific(_, _) => 4,
                             Plan::Build(_) => 3,
+                            Plan::Spawn(_) => 2,
                             Plan::Hatch(_) => 7,
                         }
                     } else {
@@ -1697,7 +1698,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             let occupied_spaces: Vec<_> =
                                 get_all_spaces_occupied_by(&state.board, colour);
 
-                            if let Some(space_coords) = rng.choose(&occupied_spaces).map(|&i| i) {
+                            let possible_target_space_coords =
+                                if let Some(Plan::Spawn(target)) = possible_plan {
+                                    Some(target)
+                                } else {
+                                    rng.choose(&occupied_spaces).map(|&i| i)
+                                };
+
+                            if let Some(space_coords) = possible_target_space_coords {
                                 match spawn_if_possible(
                                     &mut state.board,
                                     &space_coords,
@@ -2000,9 +2008,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                     print!("Convert:");
 
                                                                     println!(
-                                                                        "{:?} to {:?} at {:?}",
+                                                                        "{:?} to {:?} {:?} at {:?}",
                                                                         piece.colour,
                                                                         colour,
+                                                                        pips,
                                                                         space_coords
                                                                     );
                                                                 }
@@ -3062,6 +3071,35 @@ fn get_valid_move_targets(board: &Board, (x, y): (i8, i8)) -> HashSet<(i8, i8)> 
 
     result
 }
+fn get_other_colour_c_slash_d_targets(
+    board: &Board,
+    (x, y): (i8, i8),
+    colour: PieceColour,
+) -> HashSet<(i8, i8)> {
+    let mut result = HashSet::new();
+
+    let does_not_contain_colour = board
+        .get(&(x, y))
+        .map(|space| {
+            space.pieces.filtered_indicies(|p| p.colour == colour).len() == 0
+        })
+        .unwrap_or(true);
+    if does_not_contain_colour {
+        return result;
+    }
+
+
+    for &(dx, dy) in FOUR_WAY_OFFSETS.iter() {
+        let new_coords = (x.saturating_add(dx), y.saturating_add(dy));
+        if let Some(space) = board.get(&new_coords) {
+            if space.pieces.filtered_indicies(|p| p.colour != colour).len() != 0 {
+                result.insert(new_coords);
+            }
+        }
+    }
+
+    result
+}
 
 fn get_all_build_targets(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
     set_to_vec(get_all_build_targets_set(board, colour))
@@ -4107,6 +4145,35 @@ fn get_winning_plan(
 
     let occupied_spaces = get_all_spaces_occupied_by(board, colour);
 
+    let adjacent_c_slash_d_targets: Vec<(i8, i8)> = occupied_spaces
+        .iter()
+        .flat_map(|key| {
+            get_other_colour_c_slash_d_targets(board, *key, colour).into_iter()
+        })
+        .collect();
+
+    for target in adjacent_c_slash_d_targets {
+        if let Some(Plan::ConvertSlashDemolish(plan_target, piece_index)) =
+            get_c_slash_d_plan(board, hand, stashes, target, colour)
+        {
+            let mut board_copy = board.clone();
+
+            if let Some(space) = board_copy.get_mut(&plan_target) {
+                if let Some(piece) = space.pieces.get_mut(piece_index) {
+                    //TODO test that they can convert
+                    piece.colour = colour;
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            if winners_contains(get_winners(&board_copy, stashes), participant) {
+                return Some(Plan::ConvertSlashDemolish(plan_target, piece_index));
+            }
+        }
+    }
+
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
     if has_ace {
@@ -4170,6 +4237,7 @@ enum Plan {
     Move((i8, i8)),
     MoveSpecific((i8, i8), (i8, i8)),
     Build((i8, i8)),
+    Spawn((i8, i8)),
     Hatch((i8, i8)),
 }
 
@@ -4350,40 +4418,8 @@ fn get_high_priority_plan(
 
 
             if adjacent_to_target || occupys_target {
-                let pip_budget: Option<u8> =
-                    hand.iter()
-                        .fold(None, |acc, card| match (acc, pip_value(&card)) {
-                            (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
-                            (None, pip_value) if pip_value == 0 => None,
-                            (None, pip_value) => Some(pip_value),
-                        });
-
-                if let Some(pip_max) = pip_budget {
-                    let possible_target_piece = board.get(&target).and_then(|space| {
-                        let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
-                            p.colour != colour && u8::from(p.pips) <= pip_max
-                                //Don't give your opponent the ability to Hatch
-                                //if there is a completable_power_block
-                                && (
-                                    stashes[p.colour].used_count() < STASH_MAX - 1
-                                    //TODO confirm this is necessary
-                                    // || completable_power_blocks.len() == 0
-                                )
-                        });
-
-                        other_player_pieces.sort_by_key(|&i| {
-                            space
-                                .pieces
-                                .get(i)
-                                .map(|p| stashes[p.colour].used_count())
-                                .unwrap_or(0)
-                        });
-
-                        other_player_pieces.pop()
-                    });
-                    if let Some(target_piece) = possible_target_piece {
-                        return Some(Plan::ConvertSlashDemolish(target, target_piece));
-                    }
+                if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, target, colour) {
+                    return Some(plan);
                 }
             };
 
@@ -4404,6 +4440,101 @@ fn get_high_priority_plan(
     None
 }
 
+fn get_c_slash_d_plan(
+    board: &Board,
+    hand: &Vec<Card>,
+    stashes: &Stashes,
+    target: (i8, i8),
+    colour: PieceColour,
+) -> Option<Plan> {
+    let pip_budget: Option<u8> =
+        hand.iter()
+            .fold(None, |acc, card| match (acc, pip_value(&card)) {
+                (Some(prev), pip_value) => Some(prev.saturating_add(pip_value)),
+                (None, pip_value) if pip_value == 0 => None,
+                (None, pip_value) => Some(pip_value),
+            });
+
+    if let Some(pip_max) = pip_budget {
+        let possible_target_piece = board.get(&target).and_then(|space| {
+            let mut other_player_pieces = space.pieces.filtered_indicies(|p| {
+                p.colour != colour && u8::from(p.pips) <= pip_max
+                //Don't give your opponent the ability to Hatch
+                &&
+                    stashes[p.colour].used_count() < STASH_MAX - 1
+            });
+
+            other_player_pieces.sort_by_key(|&i| {
+                space
+                    .pieces
+                    .get(i)
+                    .map(|p| stashes[p.colour].used_count())
+                    .unwrap_or(0)
+            });
+
+            other_player_pieces.pop()
+        });
+        if let Some(target_piece) = possible_target_piece {
+            return Some(Plan::ConvertSlashDemolish(target, target_piece));
+        }
+    }
+
+    None
+}
+
+fn get_other_winning_plans(
+    board: &Board,
+    hand: &Vec<Card>,
+    stashes: &Stashes,
+    colour: PieceColour,
+) -> Vec<Plan> {
+    let other_colours = other_active_colours(stashes, colour);
+    let mut other_winning_plans = Vec::new();
+
+    let board_cards: Vec<Card> = board.values().map(|s| s.card.clone()).collect();
+
+    let mut full_hand = Card::all_values();
+    full_hand.retain(|c| !(hand.contains(c) || board_cards.contains(c)));
+
+    for current_colour in other_colours {
+        if let Some(plan) = get_winning_plan(board, stashes, &full_hand, current_colour) {
+            println!("get_winning_plan");
+            if let Some(participant) = colour_to_participant(stashes, current_colour) {
+                other_winning_plans.push((participant, plan));
+            }
+        }
+    }
+    //Prevent whoever will win next fromk winning
+    let order_keys = {
+        let mut order_keys = HashMap::new();
+        if let Some(participant) = colour_to_participant(stashes, colour) {
+            order_keys.insert(participant, 0);
+
+            let mut counter: u8 = 1;
+            let mut current_participant = participant;
+            loop {
+                current_participant =
+                    next_participant(cpu_player_count_stashes(stashes), current_participant);
+
+                order_keys.insert(current_participant, counter);
+
+                counter += 1;
+
+                if current_participant == participant || counter == 255 {
+                    break;
+                }
+            }
+        }
+
+        order_keys
+    };
+
+    other_winning_plans.sort_by_key(|&(participant, _)| {
+        order_keys.get(&participant).map(|&k| k).unwrap_or(255u8)
+    });
+
+    other_winning_plans.iter().map(|&(_, plan)| plan).collect()
+}
 
 fn get_plan(
     board: &Board,
@@ -4425,54 +4556,7 @@ fn get_plan(
         println!("No winning plan");
     }
 
-
-    let other_winning_plans: Vec<Plan> = {
-        let other_colours = other_active_colours(stashes, colour);
-        let mut other_winning_plans = Vec::new();
-
-        let board_cards: Vec<Card> = board.values().map(|s| s.card.clone()).collect();
-
-        let mut full_hand = Card::all_values();
-        full_hand.retain(|c| !(hand.contains(c) || board_cards.contains(c)));
-
-        for current_colour in other_colours {
-            if let Some(plan) = get_winning_plan(board, stashes, &full_hand, current_colour) {
-                if let Some(participant) = colour_to_participant(stashes, current_colour) {
-                    other_winning_plans.push((participant, plan));
-                }
-            }
-        }
-        //Prevent whoever will win next fromk winning
-        let order_keys = {
-            let mut order_keys = HashMap::new();
-            if let Some(participant) = colour_to_participant(stashes, colour) {
-                order_keys.insert(participant, 0);
-
-                let mut counter: u8 = 1;
-                let mut current_participant = participant;
-                loop {
-                    current_participant =
-                        next_participant(cpu_player_count_stashes(stashes), current_participant);
-
-                    order_keys.insert(current_participant, counter);
-
-                    counter += 1;
-
-                    if current_participant == participant || counter == 255 {
-                        break;
-                    }
-                }
-            }
-
-            order_keys
-        };
-
-        other_winning_plans.sort_by_key(|&(participant, _)| {
-            order_keys.get(&participant).map(|&k| k).unwrap_or(255u8)
-        });
-
-        other_winning_plans.iter().map(|&(_, plan)| plan).collect()
-    };
+    let other_winning_plans: Vec<Plan> = get_other_winning_plans(board, hand, stashes, colour);
 
     let power_blocks = get_power_blocks(board);
 
@@ -4534,11 +4618,20 @@ fn get_plan(
                     empty_disruption_targets.push(to);
                 }
                 Plan::ConvertSlashDemolish(to, _) => {
-                    disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
+                    let can_spawn = stashes[colour][Pips::One] != NoneLeft;
+                    if can_spawn && is_occupied_by(&board, &to, colour) {
+                        return Some(Plan::Spawn(to));;
+                    } else {
+                        disruption_targets
+                            .append(&mut get_all_power_block_coords(&power_blocks, to));
+                    }
                 }
                 Plan::Move(_from) => {
                     //no point in disrupting where they were
                     //TODO is this ever emitted as a winning plan?
+                }
+                Plan::Spawn(_) => {
+                    //It is impossible to directly win by `Spawn`ing
                 }
                 Plan::MoveSpecific(_from, to) => {
                     disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
@@ -4843,7 +4936,6 @@ fn get_plan(
                 &target,
                 colour,
             ) {
-                println!("0");
                 return Some(f_s);
             }
         }
@@ -4866,7 +4958,6 @@ fn get_plan(
                 if possible_targets.contains(target) &&
                     flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
-                    println!("1");
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }
@@ -4878,7 +4969,6 @@ fn get_plan(
                 if possible_targets.contains(target) &&
                     flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
-                    println!("2");
                     return Some(Plan::FlySpecific(*source, *target));
                 }
             }
@@ -4910,6 +5000,15 @@ fn get_plan(
                     return Some(Plan::Move(*adjacent));
                 }
             }
+        }
+    }
+
+    for target in occupied_disruption_targets
+        .iter()
+        .chain(occupied_completable_disruption_targets.iter())
+    {
+        if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, *target, colour) {
+            return Some(plan);
         }
     }
 
@@ -5019,7 +5118,9 @@ mod plan_tests {
     fn add_piece(board: &mut Board, key: (i8, i8), colour: PieceColour, pips: Pips) {
         board
             .get_mut(&key)
-            .map(|s| s.pieces.push(Piece { colour, pips }));
+            .expect("That space isn't there yet!")
+            .pieces
+            .push(Piece { colour, pips });
     }
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -5857,7 +5958,7 @@ mod plan_tests {
             }
         }
 
-        fn build_rather_than_move_if_other_player_would_win(seed: usize) -> bool {
+        fn spawn_rather_than_move_if_other_player_would_win(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
 
@@ -5887,8 +5988,8 @@ mod plan_tests {
 
             let red_stash = Stash {
                 colour: Red,
-                one_pip: OneLeft,
-                two_pip: OneLeft,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
 
@@ -5902,7 +6003,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Build((2,1))) => {
+                Some(Plan::Spawn((1,1))) => {
                     true
                 },
                 _ => {
@@ -6305,6 +6406,116 @@ mod plan_tests {
             }
         }
 
+        fn convert_slash_demolish_to_prevent_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Green, Pips::Three);
+
+            add_space(&mut board, (3,0), Hearts, Three);
+            add_piece(&mut board, (3,0), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: TwoLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+
+            match plan {
+                Some(Plan::ConvertSlashDemolish((2,0), _)) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+        fn notice_c_slash_d_winning_plan(seed: usize) -> bool {
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Spades, Ten);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Eight);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (2,0), Spades, Nine);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            add_space(&mut board, (1,-1), Hearts, Three);
+            add_piece(&mut board, (1,-1), Black, Pips::One);
+
+            add_space(&mut board, (1,1), Spades, Seven);
+
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![];
+
+            let plans = get_other_winning_plans(&board, &hand, &stashes, Black);
+
+            match plans.len() {
+                0 => {
+                    false
+                }
+                _ => {
+                    true
+                },
+            }
+        }
     }
 
 
