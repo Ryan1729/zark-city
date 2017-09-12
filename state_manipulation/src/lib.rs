@@ -4157,7 +4157,6 @@ fn get_winning_plan(
             get_c_slash_d_plan(board, hand, stashes, target, colour)
         {
             let mut board_copy = board.clone();
-
             if let Some(space) = board_copy.get_mut(&plan_target) {
                 if let Some(piece) = space.pieces.get_mut(piece_index) {
                     //TODO test that they can convert
@@ -4418,8 +4417,22 @@ fn get_high_priority_plan(
 
 
             if adjacent_to_target || occupys_target {
-                if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, target, colour) {
-                    return Some(plan);
+                //TODO this could probably be passed into this function
+                //so it doesn't need to be recalculated
+                let other_winning_plans = get_other_winning_plans(board, hand, stashes, colour);
+
+                let targets_to_skip: HashSet<_> = other_winning_plans
+                    .iter()
+                    .filter_map(|plan| match *plan {
+                        Plan::ConvertSlashDemolish(key, _) => Some(key),
+                        _ => None,
+                    })
+                    .collect();
+
+                if !targets_to_skip.contains(&target) {
+                    if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, target, colour) {
+                        return Some(plan);
+                    }
                 }
             };
 
@@ -4447,6 +4460,19 @@ fn get_c_slash_d_plan(
     target: (i8, i8),
     colour: PieceColour,
 ) -> Option<Plan> {
+    let occupied_spaces = get_all_spaces_occupied_by(board, colour);
+
+    let valid_targets: Vec<(i8, i8)> = occupied_spaces
+        .iter()
+        .flat_map(|key| {
+            get_other_colour_c_slash_d_targets(board, *key, colour).into_iter()
+        })
+        .collect();
+
+    if !valid_targets.contains(&target) {
+        return None;
+    }
+
     let pip_budget: Option<u8> =
         hand.iter()
             .fold(None, |acc, card| match (acc, pip_value(&card)) {
@@ -4504,7 +4530,7 @@ fn get_other_winning_plans(
             }
         }
     }
-    //Prevent whoever will win next fromk winning
+    //Prevent whoever will win next from winning
     let order_keys = {
         let mut order_keys = HashMap::new();
         if let Some(participant) = colour_to_participant(stashes, colour) {
@@ -6066,6 +6092,7 @@ mod plan_tests {
                 }
             }
         }
+
         fn dont_fly_away_giving_another_player_the_win(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -6459,7 +6486,7 @@ mod plan_tests {
             }
         }
 
-        fn notice_c_slash_d_winning_plan(seed: usize) -> bool {
+        fn notice_c_slash_d_winning_plan() -> bool {
             let mut board = HashMap::new();
 
             add_space(&mut board, (0,0), Spades, Ten);
@@ -6503,7 +6530,7 @@ mod plan_tests {
                 cpu_stashes: vec![red_stash, black_stash],
             };
 
-            let hand = vec![];
+            let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
 
             let plans = get_other_winning_plans(&board, &hand, &stashes, Black);
 
@@ -6514,6 +6541,120 @@ mod plan_tests {
                 _ => {
                     true
                 },
+            }
+        }
+
+        fn notice_c_slash_d_winning_plan_with_three_players() -> bool {
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            add_space(&mut board, (2,1), Hearts, Eight);
+            add_piece(&mut board, (2,1), Black, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
+
+            let plans = get_other_winning_plans(&board, &hand, &stashes, Black);
+
+            match plans.len() {
+                0 => {
+                    false
+                }
+                _ => {
+                    true
+                },
+            }
+        }
+
+        fn dont_waste_time_converting_the_wrong_colour(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Red, Pips::One);
+
+            add_space(&mut board, (2,1), Hearts, Eight);
+            add_piece(&mut board, (2,1), Black, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Black);
+
+            match plan {
+                Some(Plan::ConvertSlashDemolish((2,0), _)) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
             }
         }
     }
@@ -6527,10 +6668,10 @@ mod plan_tests {
                 let mut  board = HashMap::new();
                 // //Non-compleatable power block
                 add_space(&mut board, (0, 0), Diamonds, Six);
-                add_piece(&mut board, (0,0), Red, Pips::One);
+                add_piece(&mut board, (0, 0), Red, Pips::One);
 
                 add_space(&mut board, (0, 1), Diamonds, Five);
-                add_piece(&mut board, (0,1), Red, Pips::Two);
+                add_piece(&mut board, (0, 1), Red, Pips::Two);
 
                 add_space(&mut board, (-1, 1), Hearts, Eight);
 
