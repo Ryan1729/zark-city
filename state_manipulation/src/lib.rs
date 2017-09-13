@@ -1649,21 +1649,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         x
                     };
 
-                    fn choose_piece(
-                        board: &Board,
-                        key: &(i8, i8),
-                        colour: PieceColour,
-                    ) -> Option<((i8, i8), usize)> {
-                        if let Some(space) = board.get(key) {
-                            let own_pieces = space.pieces.filtered_indicies(|p| p.colour == colour);
-                            if let Some(piece_index) = own_pieces.last() {
-                                return Some((*key, *piece_index));
-                            }
-                        }
-
-                        None
-                    }
-
                     match turn_option {
                         1 => {
                             //Grow
@@ -1729,36 +1714,33 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             number_cards.sort();
 
                             if let Some(&card_index) = rng.choose(&number_cards) {
-                                let build_targets = get_all_build_targets(&state.board, colour);
                                 let build_target = if let Some(Plan::Build(target)) = possible_plan
                                 {
-                                    if build_targets.contains(&target) {
-                                        Some(target)
-                                    } else {
-                                        possible_plan = None;
-                                        None
-                                    }
+                                    Some(target)
                                 } else {
+                                    let build_targets = get_all_build_targets(&state.board, colour);
                                     rng.choose(&build_targets).cloned()
                                 };
                                 if let Some(key) = build_target {
-                                    state.board.insert(
+                                    if build_if_available(
+                                        &mut state.board,
+                                        hand,
                                         key,
-                                        Space {
-                                            card: hand.remove(card_index),
-                                            ..Default::default()
-                                        },
-                                    );
-
-
-                                    break 'turn;
+                                        card_index,
+                                        colour,
+                                    ) {
+                                        break 'turn;
+                                    }
                                 }
                             }
                         }
                         4 => {
                             //Move
                             let chosen_piece = match possible_plan {
-                                Some(Plan::Move(target)) | Some(Plan::MoveSpecific(target, _)) => {
+                                Some(Plan::MoveSpecific(source, _)) => {
+                                    choose_piece(&state.board, &source, colour)
+                                }
+                                Some(Plan::Move(target)) => {
                                     let adjacent_keys: Vec<_> = {
                                         let mut adjacent_keys : Vec<_> = FOUR_WAY_OFFSETS
                                         .iter()
@@ -1780,12 +1762,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         }
                                     }
 
-                                    if result.is_some() {
-                                        result
-                                    } else {
-                                        possible_plan = None;
-                                        None
-                                    }
+                                    result
                                 }
                                 _ => {
                                     let occupied_spaces: Vec<_> =
@@ -1811,16 +1788,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             };
 
                             if let Some((space_coords, piece_index)) = chosen_piece {
-                                let possible_target_space_coords =
-                                    if let Some(Plan::Move(target)) = possible_plan {
-                                        Some(target)
-                                    } else {
+                                let possible_target_space_coords = match possible_plan {
+                                    Some(Plan::Move(target)) |
+                                    Some(Plan::MoveSpecific(_, target)) => Some(target),
+
+                                    _ => {
                                         let valid_targets = set_to_vec(
                                             get_valid_move_targets(&state.board, space_coords),
                                         );
 
                                         rng.choose(&valid_targets).map(|&i| i)
-                                    };
+                                    }
+                                };
 
                                 if let Some(target_space_coords) = possible_target_space_coords {
                                     if perform_move(
@@ -1904,175 +1883,83 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 result
                             };
 
+
                             for (space_coords, piece_index) in chosen_enemy_pieces {
-                                if let Some(space) = state.board.get_mut(&space_coords) {
-                                    if let Some(piece) = space.pieces.get(piece_index).clone() {
-                                        let pips_needed = u8::from(piece.pips);
+                                if let Some(piece) = state
+                                    .board
+                                    .get(&space_coords)
+                                    .and_then(|space| space.pieces.get(piece_index).clone())
+                                {
+                                    let selections = get_c_slash_d_selections(
+                                        &stashes[colour],
+                                        &hand,
+                                        piece.pips,
+                                    );
 
-                                        let selections = {
-                                            //TODO we might want to save particular cards to make a
-                                            // power block etc.
-                                            let mut card_choices :Vec<_> = hand.iter()
-                                                .enumerate()
-                                                .filter(|&(_, c)| !c.is_number())
-                                                .collect();
+                                    //TODO You very rarely might want to demolish instead of
+                                    //convert to save a piece in your stash for a future turn
 
-                                            card_choices.sort_by(|&(_, a), &(_, b)| {
-                                                pip_value(&a).cmp(&pip_value(&b))
-                                            });
-
-                                            let mut selected_indicies = Vec::new();
-                                            let mut pips_selected = 0;
-                                            let mut smallest_card_value = 255;
-                                            while let Some((index, card)) = card_choices.pop() {
-                                                selected_indicies.push(index);
-                                                pips_selected += pip_value(card);
-                                                smallest_card_value = std::cmp::min(
-                                                    smallest_card_value,
-                                                    pip_value(card),
-                                                );
-
-                                                if pips_selected >= pips_needed {
-                                                    break;
-                                                }
-                                            }
-
-                                            if pips_selected >= pips_needed &&
-                                                smallest_card_value > pips_selected - pips_needed
-                                            {
-                                                let can_convert = match piece.pips {
-                                                    Pips::One => {
-                                                        stashes[colour][Pips::One] != NoneLeft
-                                                    }
-                                                    Pips::Two => {
-                                                        stashes[colour][Pips::One] != NoneLeft ||
-                                                            stashes[colour][Pips::Two] != NoneLeft
-                                                    }
-                                                    Pips::Three => {
-                                                        stashes[colour][Pips::One] != NoneLeft ||
-                                                            stashes[colour][Pips::Two] !=
-                                                                NoneLeft ||
-                                                            stashes[colour][Pips::Three] != NoneLeft
-                                                    }
-                                                };
-
+                                    match selections {
+                                        Some((selected_indicies, true, cards_owed)) => {
+                                            if convert_if_possible(
+                                                &mut state.board,
+                                                stashes,
                                                 Some((
-                                                    selected_indicies,
-                                                    can_convert,
-                                                    pips_selected - pips_needed,
-                                                ))
-                                            } else {
-                                                possible_plan = None;
-                                                None
-                                            }
-                                        };
-
-                                        //TODO You very rarely might want to demolish instead of
-                                        //convert to save a piece in your stash for a future turn
-
-                                        match selections {
-                                            Some((selected_indicies, true, cards_owed)) => {
-                                                //Convert
-                                                for &pips in stashes[colour]
-                                                    .available_sizes_descending()
-                                                    .iter()
-                                                {
-                                                    if pips <= piece.pips {
-                                                        if let Some(stash_piece) =
-                                                            stashes[colour].remove(pips)
-                                                        //culprit
-                                                        {
-                                                            if let Some(old_piece) =
-                                                                space.pieces.get_mut(piece_index)
-                                                            {
-                                                                stashes[old_piece.colour]
-                                                                    .add(*old_piece);
-
-                                                                *old_piece = stash_piece;
-
-                                                                for i in selected_indicies {
-                                                                    state.pile.push(hand.remove(i));
-                                                                }
-
-                                                                for _ in 0..cards_owed {
-                                                                    if let Some(card) = deal_parts(
-                                                                        &mut state.deck,
-                                                                        &mut state.pile,
-                                                                        rng,
-                                                                    ) {
-                                                                        hand.push(card);
-                                                                    }
-                                                                }
-
-                                                                if cfg!(debug_assertions) {
-                                                                    print!("Convert:");
-
-                                                                    println!(
-                                                                        "{:?} to {:?} {:?} at {:?}",
-                                                                        piece.colour,
-                                                                        colour,
-                                                                        pips,
-                                                                        space_coords
-                                                                    );
-                                                                }
-
-                                                                break 'turn;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Some((selected_indicies, false, cards_owed)) => {
-                                                //Demolish
-                                                if let Some(piece) =
-                                                    space.pieces.remove(piece_index)
-                                                {
-                                                    stashes[piece.colour].add(piece);
-                                                }
-
-                                                for i in selected_indicies {
-                                                    state.pile.push(hand.remove(i));
-                                                }
-
-                                                for _ in 0..cards_owed {
-                                                    if let Some(card) = deal_parts(
-                                                        &mut state.deck,
-                                                        &mut state.pile,
-                                                        rng,
-                                                    ) {
-                                                        hand.push(card);
-                                                    }
-                                                }
-
-                                                if cfg!(debug_assertions) {
-                                                    println!(
-                                                        "Demolish:{:?} piece at {:?}",
-                                                        piece.colour,
-                                                        space_coords
-                                                    );
-                                                }
-
+                                                    &mut state.deck,
+                                                    &mut state.pile,
+                                                    rng,
+                                                    cards_owed,
+                                                )),
+                                                hand,
+                                                selected_indicies,
+                                                space_coords,
+                                                piece_index,
+                                                piece,
+                                                colour,
+                                            ) {
                                                 break 'turn;
                                             }
-                                            _ => {}
-                                        };
-                                    }
+                                        }
+
+                                        Some((selected_indicies, false, cards_owed)) => {
+                                            if demolish_if_possible(
+                                                &mut state.board,
+                                                stashes,
+                                                Some((
+                                                    &mut state.deck,
+                                                    &mut state.pile,
+                                                    rng,
+                                                    cards_owed,
+                                                )),
+                                                hand,
+                                                selected_indicies,
+                                                space_coords,
+                                                piece_index,
+                                            ) {
+                                                break 'turn;
+                                            }
+                                        }
+                                        _ => {}
+                                    };
                                 };
                             }
                         }
                         6 => {
                             //Fly
-                            let ace_indicies: Vec<_> = hand.iter()
-                                .enumerate()
-                                .filter(|&(_, c)| c.value == Ace)
-                                .map(|(i, _)| i)
-                                .collect();
+                            let ace_index = {
+                                let mut ace_indicies: Vec<_> = hand.iter()
+                                    .enumerate()
+                                    .filter(|&(_, c)| c.value == Ace)
+                                    .map(|(i, _)| i)
+                                    .collect();
 
-                            if ace_indicies.len() == 0 {
-                                possible_plan = None;
-                                continue 'turn;
-                            }
+                                if ace_indicies.len() == 0 {
+                                    possible_plan = None;
+                                    continue 'turn;
+                                }
+
+                                ace_indicies.pop().unwrap()
+                            };
 
                             let board = &mut state.board;
                             let chosen_space = {
@@ -2080,7 +1967,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                     Some(Plan::Fly(source)) |
                                     Some(Plan::FlySpecific(source, _)) => {
                                         if board.contains_key(&source) {
-                                            board.remove(&source).map(|space| (source, space))
+                                            Some(source)
                                         } else {
                                             debug_assert!(false, "Bad Fly/FlySpecific Plan!");
                                             possible_plan = None;
@@ -2092,7 +1979,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                                         rng.choose(&spaces).and_then(
                                             |key| if is_space_movable(board, key) {
-                                                board.remove(key).map(|space| (*key, space))
+                                                Some(*key)
                                             } else {
                                                 None
                                             },
@@ -2101,7 +1988,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                 }
                             };
 
-                            if let Some((old_coords, space)) = chosen_space {
+                            if let Some(source) = chosen_space {
                                 let target_space_coords: Option<
                                     (i8, i8),
                                 > = if let Some(Plan::FlySpecific(_, target)) = possible_plan {
@@ -2112,14 +1999,10 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         None
                                     }
                                 } else {
-                                    let mut fly_from_targets =
-                                        fly_from_targets(&board, &old_coords);
-                                    if let Some(Plan::Fly(target)) = possible_plan {
-                                        if fly_from_targets.contains(&target) {
-                                            Some(target)
-                                        } else {
-                                            fly_from_targets.sort_by_key(|key| {
-                                                let adjacent_keys: Vec<_> = {
+                                    let mut fly_from_targets = fly_from_targets(&board, &source);
+
+                                    fly_from_targets.sort_by_key(|key| {
+                                        let adjacent_keys: Vec<_> = {
                                                 let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
                                                     .iter()
                                                     .map(|&(x, y)| (x + key.0, y + key.1))
@@ -2130,25 +2013,25 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                 adjacent_keys
                                             };
 
-                                                adjacent_keys
-                                                    .iter()
-                                                    .filter(|key| board.get(key).is_some())
-                                                    .count()
-                                            });
+                                        adjacent_keys
+                                            .iter()
+                                            .filter(|key| board.get(key).is_some())
+                                            .count()
+                                    });
 
-                                            fly_from_targets.pop()
-                                        }
-                                    } else {
-                                        rng.choose(&fly_from_targets).cloned()
-                                    }
+                                    fly_from_targets.pop()
                                 };
 
-                                if let Some(key) = target_space_coords {
-                                    if let Some(ace_index) = rng.choose(&ace_indicies) {
-                                        state.pile.push(hand.remove(*ace_index));
-
-                                        board.insert(key, space);
-
+                                if let Some(target) = target_space_coords {
+                                    if fly_if_possible(
+                                        board,
+                                        &mut state.pile,
+                                        hand,
+                                        source,
+                                        target,
+                                        ace_index,
+                                        colour,
+                                    ) {
                                         break 'turn;
                                     }
                                 }
@@ -2262,34 +2145,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                         }
                                     };
 
+                                    if let Some((target, card_index)) = possible_decision {
+                                        if hatch_if_possible(board, hand, stash, target, card_index)
+                                        {
+                                            if cfg!(debug_assertions) {
+                                                println!("Hatch at {:?}", target);
+                                            }
 
-                                    if let Some((key, card_index)) = possible_decision {
-                                        let mut pieces: SpacePieces = Default::default();
-
-                                        if let Some(piece) = stash.remove(Pips::One) {
-                                            pieces.push(piece);
+                                            break 'turn;
                                         }
-
-                                        board.insert(
-                                            key,
-                                            Space {
-                                                card: hand.remove(card_index),
-                                                pieces,
-
-                                                ..Default::default()
-                                            },
-                                        );
-
-                                        if cfg!(debug_assertions) {
-                                            println!("Hatch at {:?}", key);
-                                        }
-
-                                        break 'turn;
                                     }
                                 }
                             }
                         }
-
                         _ => {
                             //DrawThree
                             if let Some(card) = deal_parts(&mut state.deck, &mut state.pile, rng) {
@@ -2595,6 +2463,404 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
 
     false
+}
+
+fn build_if_available(
+    board: &mut Board,
+    hand: &mut Vec<Card>,
+    target: (i8, i8),
+    card_index: usize,
+    colour: PieceColour,
+) -> bool {
+    let build_targets = get_all_build_targets(&board, colour);
+    if build_targets.contains(&target) && hand.len() > card_index {
+        board.insert(
+            target,
+            Space {
+                card: hand.remove(card_index),
+                ..Default::default()
+            },
+        );
+
+        return true;
+    }
+
+    false
+}
+
+fn hatch_if_possible(
+    board: &mut Board,
+    hand: &mut Vec<Card>,
+    stash: &mut Stash,
+    target: (i8, i8),
+    card_index: usize,
+) -> bool {
+    if hand.len() > card_index {
+        let mut pieces: SpacePieces = Default::default();
+
+        if let Some(piece) = stash.remove(Pips::One) {
+            pieces.push(piece);
+
+            board.insert(
+                target,
+                Space {
+                    card: hand.remove(card_index),
+                    pieces,
+
+                    ..Default::default()
+                },
+            );
+
+            return true;
+        }
+    }
+
+
+    false
+}
+
+fn apply_plan(
+    board: &mut Board,
+    stashes: &mut Stashes,
+    hand: &mut Vec<Card>,
+    plan: &Plan,
+    colour: PieceColour,
+) {
+    match *plan {
+        Plan::Spawn(target) => {
+            match spawn_if_possible(board, &target, &mut stashes[colour]) {
+                _ => {}
+            };
+        }
+        Plan::Build(target) => {
+            let mut number_cards: Vec<_> = hand.iter()
+                .enumerate()
+                .filter(|&(_, c)| c.is_number())
+                .map(|(i, _)| i)
+                .collect();
+
+            if let Some(card_index) = number_cards.pop() {
+                build_if_available(board, hand, target, card_index, colour);
+            }
+        }
+        Plan::MoveSpecific(source, target) => {
+            if let Some((space_coords, piece_index)) = choose_piece(&board, &source, colour) {
+                perform_move(board, space_coords, target, piece_index);
+            }
+        }
+        Plan::Move(target) => {
+            let adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+                .iter()
+                .map(|&(x, y)| (x + target.0, y + target.1))
+                .collect();
+
+            for key in adjacent_keys.iter() {
+                if let Some((space_coords, piece_index)) = choose_piece(&board, key, colour) {
+                    perform_move(board, space_coords, target, piece_index);
+
+                    break;
+                }
+            }
+        }
+        Plan::ConvertSlashDemolish(target, piece_index) => {
+            if let Some(piece) = board
+                .get(&target)
+                .and_then(|space| space.pieces.get(piece_index).clone())
+            {
+                let selections = get_c_slash_d_selections(&stashes[colour], &hand, piece.pips);
+
+                //We always convert if possible since the only reason you'd want to
+                //demolish is to save a piece in your stash for a future turn, and this
+                //function is only meant to look one turn ahead.
+
+                match selections {
+                    Some((selected_indicies, true, _)) => {
+                        convert_if_possible(
+                            board,
+                            stashes,
+                            None,
+                            hand,
+                            selected_indicies,
+                            target,
+                            piece_index,
+                            piece,
+                            colour,
+                        );
+                    }
+
+                    Some((selected_indicies, false, _)) => {
+                        demolish_if_possible(
+                            board,
+                            stashes,
+                            None,
+                            hand,
+                            selected_indicies,
+                            target,
+                            piece_index,
+                        );
+                    }
+                    _ => {}
+                };
+            }
+        }
+        Plan::Fly(source) => {
+            let mut ace_indicies: Vec<_> = hand.iter()
+                .enumerate()
+                .filter(|&(_, c)| c.value == Ace)
+                .map(|(i, _)| i)
+                .collect();
+
+            let mut fly_from_targets = fly_from_targets(&board, &source);
+
+            fly_from_targets.sort_by_key(|key| {
+                FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + key.0, y + key.1))
+                    .filter(|key| board.get(key).is_some())
+                    .count()
+            });
+
+            if let Some(target) = fly_from_targets.pop() {
+                if let Some(ace_index) = ace_indicies.pop() {
+                    fly_if_possible(
+                        board,
+                        &mut Vec::new(),
+                        hand,
+                        source,
+                        target,
+                        ace_index,
+                        colour,
+                    );
+                }
+            }
+        }
+        Plan::FlySpecific(source, target) => {
+            let mut ace_indicies: Vec<_> = hand.iter()
+                .enumerate()
+                .filter(|&(_, c)| c.value == Ace)
+                .map(|(i, _)| i)
+                .collect();
+
+            if let Some(ace_index) = ace_indicies.pop() {
+                fly_if_possible(
+                    board,
+                    &mut Vec::new(),
+                    hand,
+                    source,
+                    target,
+                    ace_index,
+                    colour,
+                );
+            }
+        }
+        Plan::Hatch(target) => if stashes.contains(colour) {
+            let mut number_cards: Vec<_> = hand.iter()
+                .enumerate()
+                .filter(|&(_, c)| c.is_number())
+                .map(|(i, _)| i)
+                .collect();
+
+            if let Some(card_index) = number_cards.pop() {
+                hatch_if_possible(board, hand, &mut stashes[colour], target, card_index);
+            }
+        },
+    }
+}
+
+//TODO should this just be called inside `convert_if_possible` and `demolish_if_possible`?
+fn get_c_slash_d_selections(
+    stash: &Stash,
+    hand: &Vec<Card>,
+    pips: Pips,
+) -> Option<(Vec<usize>, bool, u8)> {
+    let pips_needed = u8::from(pips);
+
+    //TODO we might want to save particular cards to make a
+    // power block etc.
+    let mut card_choices: Vec<_> = hand.iter()
+        .enumerate()
+        .filter(|&(_, c)| !c.is_number())
+        .collect();
+
+    card_choices.sort_by(|&(_, a), &(_, b)| pip_value(&a).cmp(&pip_value(&b)));
+
+    let mut selected_indicies = Vec::new();
+    let mut pips_selected = 0;
+    let mut smallest_card_value = 255;
+    while let Some((index, card)) = card_choices.pop() {
+        selected_indicies.push(index);
+        pips_selected += pip_value(card);
+        smallest_card_value = std::cmp::min(smallest_card_value, pip_value(card));
+
+        if pips_selected >= pips_needed {
+            break;
+        }
+    }
+
+    if pips_selected >= pips_needed && smallest_card_value > pips_selected - pips_needed {
+        let can_convert = match pips {
+            Pips::One => stash[Pips::One] != NoneLeft,
+            Pips::Two => stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft,
+            Pips::Three => {
+                stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft ||
+                    stash[Pips::Three] != NoneLeft
+            }
+        };
+
+        Some((
+            selected_indicies,
+            can_convert,
+            pips_selected - pips_needed,
+        ))
+    } else {
+        None
+    }
+}
+
+fn convert_if_possible(
+    board: &mut Board,
+    stashes: &mut Stashes,
+    dealing_stuff: Option<(&mut Vec<Card>, &mut Vec<Card>, &mut StdRng, u8)>,
+    hand: &mut Vec<Card>,
+    selected_indicies: Vec<usize>,
+    target: (i8, i8),
+    piece_index: usize,
+    piece: Piece,
+    colour: PieceColour,
+) -> bool {
+    let selected_non_face_card = !selected_indicies
+        .iter()
+        .all(|&i| hand.get(i).map(|c| !c.is_number()).unwrap_or(false));
+    if selected_non_face_card {
+        return false;
+    }
+
+    if let Some(space) = board.get_mut(&target) {
+        for &pips in stashes[colour].available_sizes_descending().iter() {
+            if pips <= piece.pips {
+                if let Some(stash_piece) = stashes[colour].remove(pips) {
+                    if let Some(old_piece) = space.pieces.get_mut(piece_index) {
+                        stashes[old_piece.colour].add(*old_piece);
+
+                        *old_piece = stash_piece;
+
+
+                        if let Some((deck, pile, rng, cards_owed)) = dealing_stuff {
+                            for i in selected_indicies {
+                                pile.push(hand.remove(i));
+                            }
+
+                            for _ in 0..cards_owed {
+                                if let Some(card) = deal_parts(deck, pile, rng) {
+                                    hand.push(card);
+                                }
+                            }
+                        }
+
+                        if cfg!(debug_assertions) {
+                            print!("Convert:");
+
+                            println!(
+                                "{:?} to {:?} {:?} at {:?}",
+                                piece.colour,
+                                colour,
+                                pips,
+                                target
+                            );
+                        }
+
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn demolish_if_possible(
+    board: &mut Board,
+    stashes: &mut Stashes,
+    dealing_stuff: Option<(&mut Vec<Card>, &mut Vec<Card>, &mut StdRng, u8)>,
+    hand: &mut Vec<Card>,
+    selected_indicies: Vec<usize>,
+    target: (i8, i8),
+    piece_index: usize,
+) -> bool {
+    if let Some(space) = board.get_mut(&target) {
+        if let Some(piece) = space.pieces.remove(piece_index) {
+            stashes[piece.colour].add(piece);
+
+            if let Some((deck, pile, rng, cards_owed)) = dealing_stuff {
+                for i in selected_indicies {
+                    pile.push(hand.remove(i));
+                }
+
+                for _ in 0..cards_owed {
+                    if let Some(card) = deal_parts(deck, pile, rng) {
+                        hand.push(card);
+                    }
+                }
+            }
+
+            if cfg!(debug_assertions) {
+                println!("Demolish:{:?} piece at {:?}", piece.colour, target);
+            }
+
+            return true;
+        }
+    }
+    false
+}
+
+fn fly_if_possible(
+    board: &mut Board,
+    pile: &mut Vec<Card>,
+    hand: &mut Vec<Card>,
+    source: (i8, i8),
+    target: (i8, i8),
+    ace_index: usize,
+    colour: PieceColour,
+) -> bool {
+    let fly_from_targets = fly_from_targets(board, &source);
+    if !fly_from_targets.contains(&target) {
+        return false;
+    }
+
+    if let Some(card) = hand.get(ace_index) {
+        if card.value != Ace {
+            return false;
+        }
+    }
+
+    let space_has_piece_of_colour = board
+        .get(&source)
+        .map(|space| {
+            space.pieces.filtered_indicies(|p| p.colour == colour).len() > 0
+        })
+        .unwrap_or(false);
+    if space_has_piece_of_colour && !board.contains_key(&target) && hand.len() > ace_index {
+        if let Some(space) = board.remove(&source) {
+            pile.push(hand.remove(ace_index));
+
+            board.insert(target, space);
+
+            return true;
+        }
+    }
+
+    false
+}
+
+fn choose_piece(board: &Board, key: &(i8, i8), colour: PieceColour) -> Option<((i8, i8), usize)> {
+    if let Some(space) = board.get(key) {
+        let own_pieces = space.pieces.filtered_indicies(|p| p.colour == colour);
+        if let Some(piece_index) = own_pieces.last() {
+            return Some((*key, *piece_index));
+        }
+    }
+
+    None
 }
 
 fn occupied_by_or_adjacent_spaces(board: &Board, colour: PieceColour) -> Vec<(i8, i8)> {
@@ -4367,14 +4633,15 @@ fn flight_does_not_create_non_private_power_block(
 }
 
 
-fn get_high_priority_plan(
+fn get_high_priority_plans(
     board: &Board,
     stashes: &Stashes,
     hand: &Vec<Card>,
     rng: &mut StdRng,
     disruption_targets: &Vec<(i8, i8)>,
     colour: PieceColour,
-) -> Option<Plan> {
+) -> Vec<Plan> {
+    let mut plans = Vec::new();
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
 
     for &target in disruption_targets.iter() {
@@ -4398,7 +4665,7 @@ fn get_high_priority_plan(
         let occupys_target = is_occupied_by(&board, &target, colour);
 
         if occupys_target && has_ace {
-            return Some(Plan::Fly(target));
+            plans.push(Plan::Fly(target));
         } else {
             let adjacent_keys: Vec<_> = {
                 let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
@@ -4419,7 +4686,7 @@ fn get_high_priority_plan(
             if adjacent_to_target || occupys_target {
                 //TODO this could probably be passed into this function
                 //so it doesn't need to be recalculated
-                let other_winning_plans = get_other_winning_plans(board, hand, stashes, colour);
+                let other_winning_plans = get_other_winning_plans(board, stashes, hand, colour);
 
                 let targets_to_skip: HashSet<_> = other_winning_plans
                     .iter()
@@ -4431,26 +4698,26 @@ fn get_high_priority_plan(
 
                 if !targets_to_skip.contains(&target) {
                     if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, target, colour) {
-                        return Some(plan);
+                        plans.push(plan);
                     }
                 }
             };
 
             if adjacent_to_target && !occupys_target {
-                return Some(Plan::Move(target));
+                plans.push(Plan::Move(target));
             } else if stashes[colour].is_full() {
                 let possible_plan = adjacent_keys
                     .iter()
                     .find(|key| !board.contains_key(key))
                     .map(|target_blank| Plan::Hatch(*target_blank));
-                if possible_plan.is_some() {
-                    return possible_plan;
+                if let Some(plan) = possible_plan {
+                    plans.push(plan);
                 }
             }
         }
     }
 
-    None
+    plans
 }
 
 fn get_c_slash_d_plan(
@@ -4510,8 +4777,8 @@ fn get_c_slash_d_plan(
 
 fn get_other_winning_plans(
     board: &Board,
-    hand: &Vec<Card>,
     stashes: &Stashes,
+    hand: &Vec<Card>,
     colour: PieceColour,
 ) -> Vec<Plan> {
     let other_colours = other_active_colours(stashes, colour);
@@ -4524,7 +4791,6 @@ fn get_other_winning_plans(
 
     for current_colour in other_colours {
         if let Some(plan) = get_winning_plan(board, stashes, &full_hand, current_colour) {
-            println!("get_winning_plan");
             if let Some(participant) = colour_to_participant(stashes, current_colour) {
                 other_winning_plans.push((participant, plan));
             }
@@ -4582,7 +4848,7 @@ fn get_plan(
         println!("No winning plan");
     }
 
-    let other_winning_plans: Vec<Plan> = get_other_winning_plans(board, hand, stashes, colour);
+    let other_winning_plans: Vec<Plan> = get_other_winning_plans(board, stashes, hand, colour);
 
     let power_blocks = get_power_blocks(board);
 
@@ -4847,25 +5113,71 @@ fn get_plan(
         }
     }
 
-    if let Some(plan) = get_high_priority_plan(
+    let most_winning_moves = |plan: &Plan| {
+        let mut board_copy = board.clone();
+        let mut stashes_copy = stashes.clone();
+        let mut hand_copy = hand.clone();
+
+        apply_plan(
+            &mut board_copy,
+            &mut stashes_copy,
+            &mut hand_copy,
+            plan,
+            colour,
+        );
+
+        <usize>::max_value() -
+            get_winning_plan(board, stashes, hand, colour)
+                .map(|_| 1)
+                .unwrap_or(0)
+    };
+    let least_opponent_winning_moves = |plan: &Plan| {
+        let mut board_copy = board.clone();
+        let mut stashes_copy = stashes.clone();
+        let mut hand_copy = hand.clone();
+
+        apply_plan(
+            &mut board_copy,
+            &mut stashes_copy,
+            &mut hand_copy,
+            plan,
+            colour,
+        );
+
+        get_other_winning_plans(&board_copy, &stashes_copy, &hand_copy, colour).len()
+    };
+
+    let mut plans = Vec::new();
+
+    plans.append(&mut get_high_priority_plans(
         board,
         stashes,
         hand,
         rng,
         &unoccupied_disruption_targets,
         colour,
-    ) {
+    ));
+
+    plans.sort_by_key(&most_winning_moves);
+    plans.sort_by_key(&least_opponent_winning_moves);
+
+    if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
 
-    if let Some(plan) = get_high_priority_plan(
+    plans.append(&mut get_high_priority_plans(
         board,
         stashes,
         hand,
         rng,
         &unoccupied_completable_disruption_targets,
         colour,
-    ) {
+    ));
+
+    plans.sort_by_key(&most_winning_moves);
+    plans.sort_by_key(&least_opponent_winning_moves);
+
+    if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
 
@@ -4899,7 +5211,7 @@ fn get_plan(
                 for block in target_blocks {
                     for coord in block.keys.iter() {
                         if buildable_empty_disruption_targets.contains(coord) {
-                            return Some(Plan::Build(*coord));
+                            plans.push(Plan::Build(*coord));
                         }
                     }
                 }
@@ -4930,7 +5242,7 @@ fn get_plan(
                 for block in target_blocks {
                     for coord in block.keys.iter() {
                         if buildable_empty_disruption_targets.contains(coord) {
-                            return Some(Plan::Build(*coord));
+                            plans.push(Plan::Build(*coord));
                         }
                     }
                 }
@@ -4962,7 +5274,7 @@ fn get_plan(
                 &target,
                 colour,
             ) {
-                return Some(f_s);
+                plans.push(f_s);
             }
         }
     }
@@ -4984,7 +5296,7 @@ fn get_plan(
                 if possible_targets.contains(target) &&
                     flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
-                    return Some(Plan::FlySpecific(*source, *target));
+                    plans.push(Plan::FlySpecific(*source, *target));
                 }
             }
         }
@@ -4995,7 +5307,7 @@ fn get_plan(
                 if possible_targets.contains(target) &&
                     flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
                 {
-                    return Some(Plan::FlySpecific(*source, *target));
+                    plans.push(Plan::FlySpecific(*source, *target));
                 }
             }
         }
@@ -5023,7 +5335,7 @@ fn get_plan(
         for adjacent in adjacent_filled_keys.iter() {
             for &(x, y) in FOUR_WAY_OFFSETS.iter() {
                 if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                    return Some(Plan::Move(*adjacent));
+                    plans.push(Plan::Move(*adjacent));
                 }
             }
         }
@@ -5034,11 +5346,14 @@ fn get_plan(
         .chain(occupied_completable_disruption_targets.iter())
     {
         if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, *target, colour) {
-            return Some(plan);
+            plans.push(plan);
         }
     }
 
-    None
+    plans.sort_by_key(&most_winning_moves);
+    plans.sort_by_key(&least_opponent_winning_moves);
+
+    plans.first().cloned()
 }
 
 #[cfg(test)]
@@ -6411,7 +6726,7 @@ mod plan_tests {
 
 
             match plan {
-                Some(Plan::Fly(target))|Some(Plan::FlySpecific(_, target)) => {
+                Some(Plan::FlySpecific(_, target)) => {
                     let forbidden_targets = vec![
                         (0,1),
                         (0,-1),
@@ -6532,7 +6847,7 @@ mod plan_tests {
 
             let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
 
-            let plans = get_other_winning_plans(&board, &hand, &stashes, Black);
+            let plans = get_other_winning_plans(&board, &stashes, &hand, Black);
 
             match plans.len() {
                 0 => {
@@ -6587,7 +6902,7 @@ mod plan_tests {
 
             let hand = vec![Card {suit: Diamonds, value: King}, Card {suit: Hearts, value: King}];
 
-            let plans = get_other_winning_plans(&board, &hand, &stashes, Black);
+            let plans = get_other_winning_plans(&board, &stashes, &hand, Black);
 
             match plans.len() {
                 0 => {

@@ -139,9 +139,26 @@ pub struct StarterCards {
     pub first: Participant,
 }
 
+#[derive(Clone)]
 pub struct Stashes {
     pub player_stash: Stash,
     pub cpu_stashes: Vec<Stash>,
+}
+
+impl Stashes {
+    pub fn contains(&self, colour: PieceColour) -> bool {
+        if self.player_stash.colour == colour {
+            true
+        } else {
+            for stash in self.cpu_stashes.iter() {
+                if stash.colour == colour {
+                    return true;
+                }
+            }
+
+            false
+        }
+    }
 }
 
 impl Index<PieceColour> for Stashes {
@@ -180,7 +197,7 @@ impl IndexMut<PieceColour> for Stashes {
 
 
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Stash {
     pub colour: PieceColour,
     pub one_pip: PiecesLeft,
