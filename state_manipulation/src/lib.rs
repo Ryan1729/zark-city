@@ -1639,8 +1639,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //can only Draw or Hatch
                             *rng.choose(&vec![0, 7]).unwrap_or(&0)
                         } else {
-                            //Don't Fly randomly, and you can't Hatch anyways
-                            *rng.choose(&vec![0, 1, 2, 3, 4, 5]).unwrap_or(&0)
+                            //Don't Fly or Move randomly, and you can't Hatch anyways
+                            *rng.choose(&vec![0, 1, 2, 3, 5]).unwrap_or(&0)
                         };
                         if cfg!(debug_assertions) {
                             println!("randomly chose {:?}", x);
