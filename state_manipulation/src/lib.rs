@@ -4640,6 +4640,7 @@ fn get_high_priority_plans(
     rng: &mut StdRng,
     disruption_targets: &Vec<(i8, i8)>,
     occupied_spaces: &Vec<(i8, i8)>,
+    empty_disruption_targets: &Vec<(i8, i8)>,
     colour: PieceColour,
 ) -> Vec<Plan> {
     let mut plans = Vec::new();
@@ -4711,24 +4712,24 @@ fn get_high_priority_plans(
 
             if adjacent_to_target && !occupys_target {
                 plans.push(Plan::Move(target));
-            } else {
-                let possbile_target_adjacent_blank =
-                    adjacent_keys.iter().find(|key| !board.contains_key(key));
-
-                if let Some(&target_blank) = possbile_target_adjacent_blank {
-                    if stashes[colour].is_full() {
-                        plans.push(Plan::Hatch(target_blank));
-                    } else if has_ace && occupied_spaces.len() != 0 {
-                        let source = occupied_spaces.first().cloned().unwrap();
-
-                        if flight_does_not_create_non_private_power_block(
+            }
+            let blanks = empty_disruption_targets
+                .iter()
+                .chain(adjacent_keys.iter().filter(|key| !board.contains_key(key)));
+            for &target_blank in blanks {
+                if stashes[colour].is_full() {
+                    plans.push(Plan::Hatch(target_blank));
+                } else if has_ace && occupied_spaces.len() != 0 {
+                    let source = occupied_spaces.first().cloned().unwrap();
+                    if fly_from_targets(&board, &source).contains(&target_blank) &&
+                        flight_does_not_create_non_private_power_block(
                             &board,
                             source,
                             target_blank,
                             colour,
                         ) {
-                            plans.push(Plan::FlySpecific(source, target_blank));
-                        }
+                        plans.push(Plan::FlySpecific(source, target_blank));
+                        break;
                     }
                 }
             }
@@ -5175,6 +5176,7 @@ fn get_plan(
         rng,
         &unoccupied_disruption_targets,
         &occupied_spaces,
+        &empty_disruption_targets,
         colour,
     ));
 
@@ -5184,15 +5186,15 @@ fn get_plan(
     if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
-    //TODO figure out why tests are failing if the usual rng is used
-    let seed_slice: &[_] = &[2];
+
     plans.append(&mut get_high_priority_plans(
         board,
         stashes,
         hand,
-        &mut SeedableRng::from_seed(seed_slice),
+        rng,
         &unoccupied_completable_disruption_targets,
         &occupied_spaces,
+        &empty_disruption_targets,
         colour,
     ));
 
@@ -7012,16 +7014,16 @@ mod plan_tests {
 
             add_space(&mut board, (2,1), Hearts, Eight);
 
-            add_space(&mut board, (3,2), Hearts, Four);
-            add_piece(&mut board, (3,2), Red, Pips::One);
+            add_space(&mut board, (3,1), Hearts, Four);
+            add_piece(&mut board, (3,1), Red, Pips::One);
 
             //distraction power block
-            add_space(&mut board, (3,3), Diamonds, Seven);
+            add_space(&mut board, (3,2), Diamonds, Seven);
 
-            add_space(&mut board, (3,4), Clubs, Seven);
+            add_space(&mut board, (3,3), Clubs, Seven);
 
-            add_space(&mut board, (3,5), Spades, Seven);
-            add_piece(&mut board, (3,5), Green, Pips::Two);
+            add_space(&mut board, (3,4), Spades, Seven);
+            add_piece(&mut board, (3,4), Green, Pips::Two);
 
             let player_stash = Stash {
                 colour: Green,
@@ -7111,12 +7113,12 @@ mod plan_tests {
         //and make sure it isn't affecting the actual game.
         //An easy thing to try would be a faster hasher
         quickcheck::QuickCheck::new()
-            .tests(10)
+            .tests(2)
             .quickcheck(break_up_two_blocks_when_possible as fn(usize) -> bool)
     }
 
     fn break_up_two_blocks_when_possible(seed: usize) -> bool {
-        let seed_slice: &[_] = &[0];
+        let seed_slice: &[_] = &[seed];
         //TODO figure out why this is apparently failing but not printing anything
         //for some seeds
         let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7149,15 +7151,13 @@ mod plan_tests {
 
         let plan = get_plan(&BREAK_UP_BOARD, &stashes, &hand, &mut rng, Red);
 
+        println!("plan was {:?}", plan);
         match plan {
             Some(Plan::Fly((1, 1))) |
             Some(Plan::FlySpecific((1, 1), (-1, -2))) |
             Some(Plan::Fly((1, 2))) |
             Some(Plan::FlySpecific((1, 2), (-1, -2))) => true,
-            _ => {
-                println!("plan was {:?}", plan);
-                false
-            }
+            _ => false,
         }
     }
 }
