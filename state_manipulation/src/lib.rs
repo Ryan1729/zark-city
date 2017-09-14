@@ -1633,6 +1633,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Build(_) => 3,
                             Plan::Spawn(_) => 2,
                             Plan::Hatch(_) => 7,
+                            Plan::DrawThree => 8,
                         }
                     } else {
                         let x = if stashes[colour].is_full() {
@@ -2664,6 +2665,7 @@ fn apply_plan(
                 hatch_if_possible(board, hand, &mut stashes[colour], target, card_index);
             }
         },
+        Plan::DrawThree => {}
     }
 }
 
@@ -4504,6 +4506,7 @@ enum Plan {
     Build((i8, i8)),
     Spawn((i8, i8)),
     Hatch((i8, i8)),
+    DrawThree,
 }
 
 
@@ -4717,9 +4720,7 @@ fn get_high_priority_plans(
                 .iter()
                 .chain(adjacent_keys.iter().filter(|key| !board.contains_key(key)));
             for &target_blank in blanks {
-                if stashes[colour].is_full() {
-                    plans.push(Plan::Hatch(target_blank));
-                } else if has_ace && occupied_spaces.len() != 0 {
+                if has_ace && occupied_spaces.len() != 0 {
                     let source = occupied_spaces.first().cloned().unwrap();
                     if fly_from_targets(&board, &source).contains(&target_blank) &&
                         flight_does_not_create_non_private_power_block(
@@ -4941,8 +4942,8 @@ fn get_plan(
                     //no point in disrupting where they were
                     //TODO is this ever emitted as a winning plan?
                 }
-                Plan::Spawn(_) => {
-                    //It is impossible to directly win by `Spawn`ing
+                Plan::Spawn(_) | Plan::DrawThree => {
+                    //It is impossible to directly win by `Spawn`ing or `DrawThree`ing
                 }
                 Plan::MoveSpecific(_from, to) => {
                     disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
@@ -5152,6 +5153,16 @@ fn get_plan(
         println!("hand : {:?}, has_ace {}", hand, has_ace);
     }
     let has_number_card = hand.iter().filter(|c| c.is_number()).count() > 0;
+
+    if stashes[colour].is_full() {
+        if has_number_card {
+            for target in empty_disruption_targets.iter() {
+                return Some(Plan::Hatch(*target));
+            }
+        } else {
+            return Some(Plan::DrawThree);
+        }
+    }
 
     let build_targets = get_all_build_targets_set(board, colour);
 
