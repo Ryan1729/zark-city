@@ -4398,9 +4398,6 @@ fn get_winning_plan(
     hand: &Vec<Card>,
     colour: PieceColour,
 ) -> Option<Plan> {
-    //Since the board can have a maximum of 40 entries I'm assuming avaoiding copies isn't
-    //worth it, until I see until evidence to the contrary
-
     let participant = {
         let possible_particpant = colour_to_participant(stashes, colour);
 
@@ -4420,11 +4417,14 @@ fn get_winning_plan(
         })
         .collect();
 
+    let mut board_copy = HashMap::with_capacity(board.capacity());
+
     for target in adjacent_c_slash_d_targets {
         if let Some(Plan::ConvertSlashDemolish(plan_target, piece_index)) =
             get_c_slash_d_plan(board, hand, stashes, target, colour)
         {
-            let mut board_copy = board.clone();
+            board_copy.clone_from(board);
+
             if let Some(space) = board_copy.get_mut(&plan_target) {
                 if let Some(piece) = space.pieces.get_mut(piece_index) {
                     //TODO test that they can convert
@@ -4448,7 +4448,7 @@ fn get_winning_plan(
             let fly_from_targets = fly_from_targets(board, key);
 
             for target in fly_from_targets {
-                let mut board_copy = board.clone();
+                board_copy.clone_from(board);
 
                 if let Some(space) = board_copy.remove(key) {
                     board_copy.insert(target, space);
@@ -4465,7 +4465,7 @@ fn get_winning_plan(
         let move_targets = get_valid_move_targets(board, *key);
 
         for target in move_targets {
-            let mut board_copy = board.clone();
+            board_copy.clone_from(board);
 
             if let Some(piece_index) = board_copy.get(key).and_then(|space| {
                 space
@@ -4804,7 +4804,7 @@ fn get_other_winning_plans(
     let other_colours = other_active_colours(stashes, colour);
     let mut other_winning_plans = Vec::new();
 
-    let board_cards: Vec<Card> = board.values().map(|s| s.card.clone()).collect();
+    let board_cards: HashSet<Card> = board.values().map(|s| s.card.clone()).collect();
 
     let mut full_hand = Card::all_values();
     full_hand.retain(|c| !(hand.contains(c) || board_cards.contains(c)));

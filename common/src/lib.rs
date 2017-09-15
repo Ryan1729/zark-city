@@ -695,7 +695,7 @@ impl PartialOrd for Pips {
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Card {
     pub suit: Suit,
     pub value: Value,
@@ -786,7 +786,7 @@ impl Card {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -839,7 +839,7 @@ impl PartialOrd for Suit {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Value {
     Ace,
     Two,
