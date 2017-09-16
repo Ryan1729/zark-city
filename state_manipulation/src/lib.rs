@@ -4848,6 +4848,14 @@ fn get_other_winning_plans(
     other_winning_plans.iter().map(|&(_, plan)| plan).collect()
 }
 
+fn distance_sq((x0, y0): (i8, i8), (x1, y1): (i8, i8)) -> isize {
+    square((x0 - x1) as isize) + square((y0 - y1) as isize)
+}
+
+fn square(x: isize) -> isize {
+    x * x
+}
+
 fn get_plan(
     board: &Board,
     stashes: &Stashes,
@@ -5056,7 +5064,7 @@ fn get_plan(
         });
         sort_and_dedup_targets(&mut unoccupied_completable_disruption_targets);
 
-        let empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
+        let mut empty_disruption_targets: Vec<(i8, i8)> = completable_power_blocks
             .iter()
             .filter(|completable| {
                 let mut contoller_colours = completable.keys.iter().filter_map(|key| {
@@ -5069,6 +5077,14 @@ fn get_plan(
             })
             .map(|completable| completable.completion_key)
             .collect();
+
+        empty_disruption_targets.sort_by_key(|empty| {
+            //closest to the `unoccupied_disruption_targets` first
+            unoccupied_disruption_targets
+                .iter()
+                .map(|full| distance_sq(*empty, *full))
+                .fold(0, std::cmp::max)
+        });
 
         (
             unoccupied_disruption_targets,
@@ -7066,6 +7082,70 @@ mod plan_tests {
                 _ => {
                     println!("plan was {:?}", plan);
                     false
+                }
+            }
+        }
+
+        fn do_not_open_two_completables_to_close_an_empty_one(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,-1), Spades, Two);
+
+            add_space(&mut board, (1,0), Clubs, Two);
+
+            add_space(&mut board, (0,1), Hearts, Two);
+            add_piece(&mut board, (0,1), Green, Pips::Two);
+
+            add_space(&mut board, (0,0), Spades, Eight);
+            add_piece(&mut board, (0,0), Green, Pips::Two);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+
+            add_space(&mut board, (-1,0), Spades, Five);
+
+            add_space(&mut board, (2,1), Diamonds, Five);
+
+            add_space(&mut board, (3,1), Clubs, Six);
+
+            add_space(&mut board, (3,2), Diamonds, Six);
+            add_piece(&mut board, (3,2), Green, Pips::One);
+            add_piece(&mut board, (3,2), Green, Pips::One);
+            add_piece(&mut board, (3,2), Green, Pips::One);
+
+            add_space(&mut board, (3,3), Spades, Six);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: OneLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card{suit: Diamonds, value:Ace}];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::FlySpecific((0,0), (1,-1))) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
                 }
             }
         }
