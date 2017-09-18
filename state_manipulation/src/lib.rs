@@ -5207,6 +5207,10 @@ fn get_plan(
         colour,
     ));
 
+    if plans.len() > 0 {
+        plans.push(Plan::DrawThree);
+    }
+
     plans.sort_by_key(&most_winning_moves);
     plans.sort_by_key(&least_opponent_winning_moves);
 
@@ -5224,6 +5228,10 @@ fn get_plan(
         &empty_disruption_targets,
         colour,
     ));
+
+    if plans.len() > 0 {
+        plans.push(Plan::DrawThree);
+    }
 
     plans.sort_by_key(&most_winning_moves);
     plans.sort_by_key(&least_opponent_winning_moves);
@@ -5399,6 +5407,11 @@ fn get_plan(
         if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, *target, colour) {
             plans.push(plan);
         }
+    }
+
+
+    if plans.len() > 0 {
+        plans.push(Plan::DrawThree);
     }
 
     plans.sort_by_key(&most_winning_moves);
@@ -7141,6 +7154,70 @@ mod plan_tests {
 
             match plan {
                 Some(Plan::FlySpecific((0,0), (1,-1))) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
+        fn do_not_move_from_blocking_a_win_to_a_completable_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+            add_piece(&mut board, (0,0), Black, Pips::One);
+
+            add_space(&mut board, (1,0), Spades, Two);;
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+
+            //distraction completable
+            add_space(&mut board, (-1,0), Diamonds, Four);
+
+            add_space(&mut board, (0,-1), Diamonds, Four);
+
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((-1, 0)))|Some(Plan::Move((0, -1))) => {
                     println!("plan was {:?}", plan);
                     false
                 },
