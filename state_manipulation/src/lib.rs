@@ -1630,7 +1630,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Fly(_) | Plan::FlySpecific(_, _) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
                             Plan::Move(_) | Plan::MoveSpecific(_, _) => 4,
-                            Plan::Build(_) => 3,
+                            Plan::Build(_, _) => 3,
                             Plan::Spawn(_) => 2,
                             Plan::Hatch(_) => 7,
                             Plan::DrawThree => 8,
@@ -1706,32 +1706,38 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         }
                         3 => {
                             //Build
-                            let mut number_cards: Vec<_> = hand.iter()
-                                .enumerate()
-                                .filter(|&(_, c)| c.is_number())
-                                .map(|(i, _)| i)
-                                .collect();
-                            //the cpu's choices should be a function of the rng
-                            number_cards.sort();
+                            let build_target = if let Some(Plan::Build(target, card_index)) =
+                                possible_plan
+                            {
+                                Some((target, card_index))
+                            } else {
+                                let build_targets = get_all_build_targets(&state.board, colour);
 
-                            if let Some(&card_index) = rng.choose(&number_cards) {
-                                let build_target = if let Some(Plan::Build(target)) = possible_plan
-                                {
-                                    Some(target)
-                                } else {
-                                    let build_targets = get_all_build_targets(&state.board, colour);
-                                    rng.choose(&build_targets).cloned()
-                                };
-                                if let Some(key) = build_target {
-                                    if build_if_available(
-                                        &mut state.board,
-                                        hand,
-                                        key,
-                                        card_index,
-                                        colour,
-                                    ) {
-                                        break 'turn;
-                                    }
+                                let mut number_cards: Vec<_> = hand.iter()
+                                    .enumerate()
+                                    .filter(|&(_, c)| c.is_number())
+                                    .map(|(i, _)| i)
+                                    .collect();
+                                //the cpu's choices should be a function of the rng
+                                number_cards.sort();
+
+                                match (
+                                    rng.choose(&build_targets).cloned(),
+                                    rng.choose(&number_cards),
+                                ) {
+                                    (Some(target), Some(card_index)) => Some((target, *card_index)),
+                                    _ => None,
+                                }
+                            };
+                            if let Some((key, card_index)) = build_target {
+                                if build_if_available(
+                                    &mut state.board,
+                                    hand,
+                                    key,
+                                    card_index,
+                                    colour,
+                                ) {
+                                    break 'turn;
                                 }
                             }
                         }
@@ -2533,16 +2539,8 @@ fn apply_plan(
                 _ => {}
             };
         }
-        Plan::Build(target) => {
-            let mut number_cards: Vec<_> = hand.iter()
-                .enumerate()
-                .filter(|&(_, c)| c.is_number())
-                .map(|(i, _)| i)
-                .collect();
-
-            if let Some(card_index) = number_cards.pop() {
-                build_if_available(board, hand, target, card_index, colour);
-            }
+        Plan::Build(target, card_index) => {
+            build_if_available(board, hand, target, card_index, colour);
         }
         Plan::MoveSpecific(source, target) => {
             if let Some((space_coords, piece_index)) = choose_piece(&board, &source, colour) {
@@ -3683,7 +3681,7 @@ fn block_to_two_cards_and_a_blank(
     }
 }
 
-fn completable_power_blocks(board: &Board) -> Vec<CompletableBlock> {
+fn get_completable_power_blocks(board: &Board) -> Vec<CompletableBlock> {
     let mut result = Vec::new();
 
     let plain_keys: Vec<_> = board.keys().cloned().collect();
@@ -3752,7 +3750,7 @@ fn combined_power_blocks(board: &Board) -> Vec<CombinedBlock> {
         .cloned()
         .map(Complete)
         .chain(
-            completable_power_blocks(board)
+            get_completable_power_blocks(board)
                 .iter()
                 .cloned()
                 .map(Completable),
@@ -4503,7 +4501,7 @@ enum Plan {
     ConvertSlashDemolish((i8, i8), usize),
     Move((i8, i8)),
     MoveSpecific((i8, i8), (i8, i8)),
-    Build((i8, i8)),
+    Build((i8, i8), usize),
     Spawn((i8, i8)),
     Hatch((i8, i8)),
     DrawThree,
@@ -4880,7 +4878,7 @@ fn get_plan(
 
     let power_blocks = get_power_blocks(board);
 
-    let mut completable_power_blocks = completable_power_blocks(board);
+    let mut completable_power_blocks = get_completable_power_blocks(board);
 
     completable_power_blocks.retain(|completable| {
         let has_card_to_complete: bool = match completable.completion {
@@ -4956,7 +4954,7 @@ fn get_plan(
                 Plan::MoveSpecific(_from, to) => {
                     disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
                 }
-                Plan::Build(to) => {
+                Plan::Build(to, _) => {
                     empty_disruption_targets.push(to);
                 }
                 Plan::Hatch(to) => {
@@ -5198,17 +5196,65 @@ fn get_plan(
 
     let build_targets = get_all_build_targets_set(board, colour);
 
-    let buildable_empty_disruption_targets: HashSet<(i8, i8)> = build_targets
+    let buildable_empty_disruption_targets: Vec<(i8, i8)> = build_targets
         .iter()
         .filter(|key| empty_disruption_targets.contains(key))
         .cloned()
         .collect();
+    let current_block_count = power_blocks.len() + completable_power_blocks.len();
+
+    fn get_build_plan(
+        buildable_empty_disruption_targets: &Vec<(i8, i8)>,
+        board: &Board,
+        stashes: &Stashes,
+        hand: &Vec<Card>,
+        colour: PieceColour,
+        current_block_count: usize,
+    ) -> Option<Plan> {
+        let mut number_cards: Vec<_> = hand.iter()
+            .enumerate()
+            .filter(|&(_, c)| c.is_number())
+            .map(|(i, _)| i)
+            .collect();
+        //the cpu's choices should be a function of the rng
+        number_cards.sort();
+
+        for target in buildable_empty_disruption_targets.iter() {
+            for card_index in number_cards.iter() {
+                let plan = Plan::Build(*target, *card_index);
+                let mut board_copy = board.clone();
+                let mut stashes_copy = stashes.clone();
+                let mut hand_copy = hand.clone();
+
+                apply_plan(
+                    &mut board_copy,
+                    &mut stashes_copy,
+                    &mut hand_copy,
+                    &plan,
+                    colour,
+                );
+
+                if get_power_blocks(&board_copy).len() +
+                    get_completable_power_blocks(&board_copy).len() <=
+                    current_block_count
+                {
+                    return Some(plan);
+                }
+            }
+        }
+        None
+    }
 
     if has_number_card {
-        for target in empty_disruption_targets.iter() {
-            if build_targets.contains(target) {
-                plans.push(Plan::Build(*target));
-            }
+        if let Some(plan) = get_build_plan(
+            &buildable_empty_disruption_targets,
+            &board,
+            &stashes,
+            &hand,
+            colour,
+            power_blocks.len() + completable_power_blocks.len(),
+        ) {
+            plans.push(plan);
         }
     }
 
@@ -5258,71 +5304,6 @@ fn get_plan(
 
     if cfg!(debug_assertions) {
         println!("looking for lower priority plan");
-    }
-
-    if has_number_card {
-        for target in unoccupied_disruption_targets.iter() {
-            //TODO reduce duplication with `get_high_priority_plan`
-            let adjacent_keys: Vec<_> = {
-                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
-                    .iter()
-                    .map(|&(x, y)| (x + target.0, y + target.1))
-                    .collect();
-
-                rng.shuffle(&mut adjacent_keys);
-
-                adjacent_keys
-            };
-            let adjacent_to_target = adjacent_keys
-                .iter()
-                .any(|key| is_occupied_by(&board, key, colour));
-            let occupys_target = is_occupied_by(&board, &target, colour);
-
-            if adjacent_to_target && !occupys_target {
-                let target_blocks = completable_power_blocks
-                    .iter()
-                    .filter(|b| b.keys.contains(&target));
-
-                for block in target_blocks {
-                    for coord in block.keys.iter() {
-                        if buildable_empty_disruption_targets.contains(coord) {
-                            plans.push(Plan::Build(*coord));
-                        }
-                    }
-                }
-            }
-        }
-        for target in unoccupied_completable_disruption_targets.iter() {
-            //TODO reduce duplication with `get_high_priority_plan`
-            let adjacent_keys: Vec<_> = {
-                let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
-                    .iter()
-                    .map(|&(x, y)| (x + target.0, y + target.1))
-                    .collect();
-
-                rng.shuffle(&mut adjacent_keys);
-
-                adjacent_keys
-            };
-            let adjacent_to_target = adjacent_keys
-                .iter()
-                .any(|key| is_occupied_by(&board, key, colour));
-            let occupys_target = is_occupied_by(&board, &target, colour);
-
-            if adjacent_to_target && !occupys_target {
-                let target_blocks = completable_power_blocks
-                    .iter()
-                    .filter(|b| b.keys.contains(&target));
-
-                for block in target_blocks {
-                    for coord in block.keys.iter() {
-                        if buildable_empty_disruption_targets.contains(coord) {
-                            plans.push(Plan::Build(*coord));
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if has_ace {
@@ -6043,7 +6024,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Build((0,0))) = plan {
+            if let Some(Plan::Build((0,0), _)) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -6171,7 +6152,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Build((0,0))) = plan {
+            if let Some(Plan::Build((0,0), _)) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
