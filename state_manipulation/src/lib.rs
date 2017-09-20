@@ -1640,8 +1640,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //can only Draw or Hatch
                             *rng.choose(&vec![0, 7]).unwrap_or(&0)
                         } else {
-                            //Don't Fly or Move randomly, and you can't Hatch anyways
-                            *rng.choose(&vec![0, 1, 2, 3, 5]).unwrap_or(&0)
+                            //Don't Fly, Build or Move randomly, and you can't Hatch anyways
+                            *rng.choose(&vec![0, 1, 2, 5]).unwrap_or(&0)
                         };
                         if cfg!(debug_assertions) {
                             println!("randomly chose {:?}", x);
@@ -5201,7 +5201,6 @@ fn get_plan(
         .filter(|key| empty_disruption_targets.contains(key))
         .cloned()
         .collect();
-    let current_block_count = power_blocks.len() + completable_power_blocks.len();
 
     fn get_build_plan(
         buildable_empty_disruption_targets: &Vec<(i8, i8)>,
