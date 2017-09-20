@@ -3586,14 +3586,18 @@ fn get_power_block_set(board: &Board) -> HashSet<Block> {
     get_power_blocks(board).into_iter().collect()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+fn get_completable_block_set(board: &Board) -> HashSet<CompletableBlock> {
+    get_completable_power_blocks(board).into_iter().collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
 struct CompletableBlock {
     keys: [(i8, i8); 2],
     completion: Completion,
     completion_key: (i8, i8),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
 enum Completion {
     Unique(Suit, Value),
     ValueMatch(Value),
@@ -4584,7 +4588,7 @@ fn get_fly_specific(
         let possible_targets = fly_from_targets(board, source_coord);
         for target_coord in adjacent_empty_spaces.iter() {
             if possible_targets.contains(target_coord) {
-                if flight_does_not_create_non_private_power_block(
+                if flight_does_not_create_non_private_block(
                     &board,
                     *source_coord,
                     **target_coord,
@@ -4597,6 +4601,16 @@ fn get_fly_specific(
     }
 
     None
+}
+
+fn flight_does_not_create_non_private_block(
+    board: &Board,
+    source: (i8, i8),
+    target: (i8, i8),
+    colour: PieceColour,
+) -> bool {
+    flight_does_not_create_non_private_power_block(board, source, target, colour)
+    && flight_does_not_create_non_private_completable_block(board, source, target, colour)
 }
 
 fn flight_does_not_create_non_private_power_block(
@@ -4617,6 +4631,40 @@ fn flight_does_not_create_non_private_power_block(
                 .iter()
                 .all(|block| {
                     block_to_coords(*block).iter().all(|coord| {
+                        board_copy
+                            .get(coord)
+                            .map(|space| {
+                                space.pieces.filtered_indicies(|p| p.colour != colour).len() == 0
+                            })
+                            .unwrap_or(true)
+                    })
+                })
+        } else {
+            true
+        }
+    } else {
+        true
+    }
+}
+
+fn flight_does_not_create_non_private_completable_block(
+    board: &Board,
+    source: (i8, i8),
+    target: (i8, i8),
+    colour: PieceColour,
+) -> bool {
+    if board.contains_key(&source) {
+        let old_completable_block_set = get_completable_block_set(board);
+        let mut board_copy = board.clone();
+        if let Some(space) = board_copy.remove(&source) {
+            board_copy.insert(target, space);
+
+            let new_completable_block_set = get_completable_block_set(&board_copy);
+
+            (&new_completable_block_set - &old_completable_block_set)
+                .iter()
+                .all(|block| {
+                    block.keys.iter().all(|coord| {
                         board_copy
                             .get(coord)
                             .map(|space| {
@@ -4721,7 +4769,7 @@ fn get_high_priority_plans(
                 if has_ace && occupied_spaces.len() != 0 {
                     let source = occupied_spaces.first().cloned().unwrap();
                     if fly_from_targets(&board, &source).contains(&target_blank) &&
-                        flight_does_not_create_non_private_power_block(
+                        flight_does_not_create_non_private_block(
                             &board,
                             source,
                             target_blank,
@@ -5337,7 +5385,7 @@ fn get_plan(
     if has_ace {
         //`occupied_disruption_targets` and `occupied_completable_disruption_targets`
         //contain targets in blocks that at least one space of which this player occupies.
-        //We need targets thatare actually occupied by this player.
+        //We need targets that are actually occupied by this player.
         let all_occupied_disruption_targets: Vec<_> = occupied_disruption_targets
             .iter()
             .chain(occupied_completable_disruption_targets.iter())
@@ -5349,7 +5397,7 @@ fn get_plan(
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
                 if possible_targets.contains(target) &&
-                    flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
+                    flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
                 }
@@ -5360,7 +5408,7 @@ fn get_plan(
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
                 if possible_targets.contains(target) &&
-                    flight_does_not_create_non_private_power_block(&board, *source, *target, colour)
+                    flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
                 }
@@ -7282,6 +7330,83 @@ mod plan_tests {
                 _ => {
                     println!("plan was {:?}", plan);
                     false
+                }
+            }
+        }
+        
+        fn dont_waste_time_flying_to_recreate_the_same_completeable_block(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,1), Spades, Two);
+            add_piece(&mut board, (0,1), Red, Pips::One);
+            
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (0,-1), Diamonds, Two);
+            add_piece(&mut board, (0,-1), Black, Pips::One);
+            add_piece(&mut board, (0,-1), Black, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![
+                Card { suit: Diamonds, value: Queen },
+                Card { suit: Spades, value: King },
+                Card { suit: Spades, value: Ace }
+            ];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+
+            match plan {
+                Some(Plan::FlySpecific(_, target)) => {
+                    let forbidden_targets = vec![
+                        (2,-1),
+                        (2,0),
+                        (2,1),
+                        (-1,1),
+                        (1,1),
+                        (-1,0),
+                        (1,0),
+                        (-1, -1),
+                        (1, -1)
+                    ];
+                    if forbidden_targets.contains(&target) {
+                        println!("plan was {:?}", plan);
+                        false
+                    } else {
+                         true
+                    }
+                },
+                _ => {
+                    true
                 }
             }
         }
