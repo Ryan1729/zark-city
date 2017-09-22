@@ -3819,36 +3819,40 @@ fn block_to_pieces(board: &Board, block: Block) -> Option<[SpacePieces; 3]> {
 }
 
 fn is_power_block(board: &Board, block: Block) -> bool {
-    if let Some(mut cards) = block_to_cards(board, block) {
-        cards.sort();
-
-        match (cards[0], cards[1], cards[2]) {
-            (Card { value: v1, .. }, Card { value: v2, .. }, Card { value: v3, .. })
-                if v1.is_number() && v2.is_number() && v3.is_number() && v1 == v2 && v2 == v3 =>
-            {
-                true
-            }
-            (
-                Card {
-                    value: v1,
-                    suit: s1,
-                },
-                Card {
-                    value: v2,
-                    suit: s2,
-                },
-                Card {
-                    value: v3,
-                    suit: s3,
-                },
-            ) if v1.is_number() && v2.is_number() && v3.is_number() && s1 == s2 && s2 == s3 =>
-            {
-                f32::from(v1) + 1.0 == f32::from(v2) && f32::from(v2) + 1.0 == f32::from(v3)
-            }
-            _ => false,
-        }
+    if let Some(cards) = block_to_cards(board, block) {
+        can_cards_form_block(cards)
     } else {
         false
+    }
+}
+
+fn can_cards_form_block(mut cards: [Card; 3]) -> bool {    
+    cards.sort();
+
+    match (cards[0], cards[1], cards[2]) {
+        (Card { value: v1, .. }, Card { value: v2, .. }, Card { value: v3, .. })
+            if v1.is_number() && v2.is_number() && v3.is_number() && v1 == v2 && v2 == v3 =>
+        {
+            true
+        }
+        (
+            Card {
+                value: v1,
+                suit: s1,
+            },
+            Card {
+                value: v2,
+                suit: s2,
+            },
+            Card {
+                value: v3,
+                suit: s3,
+            },
+        ) if v1.is_number() && v2.is_number() && v3.is_number() && s1 == s2 && s2 == s3 =>
+        {
+            f32::from(v1) + 1.0 == f32::from(v2) && f32::from(v2) + 1.0 == f32::from(v3)
+        }
+        _ => false,
     }
 }
 
@@ -4767,6 +4771,10 @@ fn get_high_priority_plans(
                 }
                 
                 fn get_grow_plan(board: &Board, stashes: &Stashes, occupied_spaces:&Vec<(i8,i8)>, colour: PieceColour, pips: Pips) -> Option<Plan> {
+                    if stashes[colour][pips] == NoneLeft {
+                        return None;
+                    }
+                    
                     for target in occupied_spaces.iter() {
                         let possible_index = board
                             .get(target)
@@ -5099,6 +5107,87 @@ fn get_plan(
                     .any(|key| occupied_spaces.contains(key))
             });
 
+        fn get_double_fly_targets(board: &Board, used_colours: &Vec<PieceColour>) -> Vec<(i8,i8)>{
+            let spaces_with_pieces: Vec<(i8,i8)> = board.iter().filter_map(|(&key, &space)|
+                if space.pieces.len() > 0 {
+                    Some(key)
+                } else {
+                    None
+                }
+            ).collect();
+            
+            let mut result = Vec::new();
+            
+            for &used_colour in used_colours.iter() {
+                let mut card_key_pairs_with_colour : Vec<(Card, (i8,i8))> = spaces_with_pieces.iter()
+                    .filter_map(|key| board
+                                    .get(key)
+                                    .and_then(|space| if space.pieces.filtered_indicies(|p| p.colour == used_colour).len() > 0 {
+                                            Some((space.card, *key))
+                                        } else {
+                                            None
+                                        })
+                            ).collect();
+                
+                card_key_pairs_with_colour.sort_by(|&(c1, _), &(c2, _)| c1.suit.cmp(&c2.suit));
+                
+                for card_key_pairs in card_key_pairs_with_colour.windows(3) {
+                    if can_cards_form_block([card_key_pairs[0].0,card_key_pairs[1].0, card_key_pairs[2].0]) {
+                        result.push(card_key_pairs[0].1);
+                        result.push(card_key_pairs[1].1);
+                        result.push(card_key_pairs[2].1);
+                    }
+                }
+                
+                card_key_pairs_with_colour.sort_by(|&(c1, _), &(c2, _)| c1.value.cmp(&c2.value));
+                
+                for card_key_pairs in card_key_pairs_with_colour.windows(3) {
+                    if can_cards_form_block([card_key_pairs[0].0,card_key_pairs[1].0, card_key_pairs[2].0]) {
+                        result.push(card_key_pairs[0].1);
+                        result.push(card_key_pairs[1].1);
+                        result.push(card_key_pairs[2].1);
+                    }
+                }
+
+            }
+            
+            result.sort();
+            result.dedup();
+            
+            result
+        }
+
+        let mut double_fly_targets = get_double_fly_targets(board, &active_colours(stashes));
+        
+        
+        let piece_count = |key: (i8,i8)| board.get(&key).map(|space| space.pieces.len()).unwrap_or(<usize>::max_value());
+        let adjacent_piece_count = |key: &(i8,i8)| {
+            let adjacent_filled_keys: Vec<_> = {
+                let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
+                    .iter()
+                    .map(|&(x, y)| (x + key.0, y + key.1))
+                    .filter(|key| board.get(key).is_some())
+                    .collect();
+
+                adjacent_filled_keys
+            };
+            
+            if adjacent_filled_keys.len() == 0 {
+                return <usize>::max_value();
+            }
+            adjacent_filled_keys
+                .into_iter()
+                .fold(0usize, |acc, adj_key| acc.saturating_add(piece_count(adj_key)))
+        };
+        double_fly_targets.sort_by_key(&adjacent_piece_count);
+        
+        let (occupied_double_fly_targets, unoccupied_double_fly_targets): (
+            Vec<(i8, i8)>,
+            Vec<(i8, i8)>,
+        ) = 
+            double_fly_targets.into_iter()
+            .partition(|key| occupied_spaces.contains(key));
+
         let (mut occupied_disruption_targets, mut unoccupied_disruption_targets): (
             Vec<(i8, i8)>,
             Vec<(i8, i8)>,
@@ -5106,10 +5195,12 @@ fn get_plan(
             occupied_power_blocks
                 .iter()
                 .flat_map(|block| block_to_coords(*block).to_vec().into_iter())
+                .chain(occupied_double_fly_targets.into_iter())
                 .collect(),
             unoccupied_power_blocks
                 .iter()
                 .flat_map(|block| block_to_coords(*block).to_vec().into_iter())
+                .chain(unoccupied_double_fly_targets.into_iter())
                 .collect(),
         );
 
@@ -7505,6 +7596,140 @@ mod plan_tests {
                 }
             }
         }
+        
+        fn move_towards_double_fly_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Eight);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+            
+            add_space(&mut board, (-1,0), Diamonds, Five);
+            
+            add_space(&mut board, (1,0), Spades, Six);
+
+            add_space(&mut board, (0,-1), Spades, Two);
+
+            //double fly win
+            add_space(&mut board, (-2,0), Hearts, Seven);
+            add_piece(&mut board, (-2,0), Green, Pips::One);
+            
+            add_space(&mut board, (2,0), Hearts, Eight);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+            
+            add_space(&mut board, (0,-2), Hearts, Nine);
+            add_piece(&mut board, (0,-2), Green, Pips::One);
+            
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((-1,0)))|Some(Plan::Move((1,0)))|Some(Plan::Move((0,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+        
+        fn move_towards_double_fly_win_working_with_other_players(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Eight);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+            
+            add_space(&mut board, (-1,0), Diamonds, Five);
+            add_piece(&mut board, (-1,0), Black, Pips::One);
+            
+            add_space(&mut board, (1,0), Spades, Six);
+            add_piece(&mut board, (1,0), Blue, Pips::One);
+
+            add_space(&mut board, (0,-1), Spades, Two);
+
+            //double fly win
+            add_space(&mut board, (-2,0), Hearts, Seven);
+            add_piece(&mut board, (-2,0), Green, Pips::One);
+            
+            add_space(&mut board, (2,0), Hearts, Eight);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+            
+            add_space(&mut board, (0,-2), Hearts, Nine);
+            add_piece(&mut board, (0,-2), Green, Pips::One);
+            
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            
+            let blue_stash = Stash {
+                colour: Blue,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![black_stash, blue_stash, red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((0,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
     }
 
 
@@ -7518,7 +7743,7 @@ mod plan_tests {
                 add_space(&mut board, (0, 0), Diamonds, Six);
                 add_piece(&mut board, (0, 0), Red, Pips::One);
 
-                add_space(&mut board, (0, 1), Diamonds, Five);
+                add_space(&mut board, (0, 1), Clubs, Five);
                 add_piece(&mut board, (0, 1), Red, Pips::Two);
 
                 add_space(&mut board, (-1, 1), Hearts, Eight);
