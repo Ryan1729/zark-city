@@ -1627,13 +1627,14 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             println!("plan is {:?}", plan);
                         }
                         match plan {
+                            Plan::DrawThree => 8,
+                            Plan::Hatch(_) => 7,
                             Plan::Fly(_) | Plan::FlySpecific(_, _) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
                             Plan::Move(_) | Plan::MoveSpecific(_, _) => 4,
                             Plan::Build(_, _) => 3,
                             Plan::Spawn(_) => 2,
-                            Plan::Hatch(_) => 7,
-                            Plan::DrawThree => 8,
+                            Plan::Grow(_, _) => 1,
                         }
                     } else {
                         let x = if stashes[colour].is_full() {
@@ -1653,8 +1654,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     match turn_option {
                         1 => {
                             //Grow
-
-                            let chosen_piece = {
+                            let chosen_piece = if let Some(Plan::Grow(space_coords, piece_index)) = possible_plan {
+                                    Some((space_coords, piece_index))
+                                } else {
                                 let occupied_spaces: Vec<_> =
                                     get_all_spaces_occupied_by(&state.board, colour);
 
@@ -2534,6 +2536,11 @@ fn apply_plan(
     colour: PieceColour,
 ) {
     match *plan {
+        Plan::Grow(target, piece_index) => {
+            match grow_if_available(target,piece_index,board,&mut stashes[colour]) {
+                _ => {}
+            };
+        }
         Plan::Spawn(target) => {
             match spawn_if_possible(board, &target, &mut stashes[colour]) {
                 _ => {}
@@ -4503,6 +4510,7 @@ enum Plan {
     Fly((i8, i8)),
     FlySpecific((i8, i8), (i8, i8)),
     ConvertSlashDemolish((i8, i8), usize),
+    Grow((i8, i8), usize),
     Move((i8, i8)),
     MoveSpecific((i8, i8), (i8, i8)),
     Build((i8, i8), usize),
@@ -4757,6 +4765,40 @@ fn get_high_priority_plans(
                         plans.push(plan);
                     }
                 }
+                
+                fn get_grow_plan(board: &Board, stashes: &Stashes, occupied_spaces:&Vec<(i8,i8)>, colour: PieceColour, pips: Pips) -> Option<Plan> {
+                    for target in occupied_spaces.iter() {
+                        let possible_index = board
+                            .get(target)
+                            .and_then(|space| space
+                                        .pieces
+                                        .filtered_indicies(|p| p.colour == colour && p.pips == pips)
+                                        .first()
+                                        .cloned()
+                                    );
+                                    
+                        if let Some(piece_index) = possible_index {
+                            return Some(Plan::Grow(*target, piece_index));
+                        }
+                    }
+                    
+                    None
+                }
+                
+                for plan in plans.iter_mut() {
+                    if let Plan::ConvertSlashDemolish(c_slash_d_target, piece_index) = *plan {
+                        let possible_pips = board
+                            .get(&c_slash_d_target)
+                            .and_then(|space| space.pieces.get(piece_index).map(|p| p.pips));
+                        if let Some(pips) = possible_pips {
+                            if stashes[colour][pips] == NoneLeft {
+                                if let Some(grow_plan) = get_grow_plan(board, stashes, &occupied_spaces, colour, pips) {
+                                    *plan = grow_plan
+                                }
+                            }
+                        }
+                    }
+                }
             };
 
             if adjacent_to_target && !occupys_target {
@@ -4962,8 +5004,7 @@ fn get_plan(
         //limit disruption to winning prevention
         let mut disruption_targets = Vec::new();
         let mut empty_disruption_targets = Vec::new();
-
-
+        
         for plan in other_winning_plans {
             match plan {
                 Plan::Fly(from) => {
@@ -4996,8 +5037,8 @@ fn get_plan(
                     //no point in disrupting where they were
                     //TODO is this ever emitted as a winning plan?
                 }
-                Plan::Spawn(_) | Plan::DrawThree => {
-                    //It is impossible to directly win by `Spawn`ing or `DrawThree`ing
+                Plan::Grow(_,_) | Plan::Spawn(_) | Plan::DrawThree => {
+                    //It is impossible to directly win with these type of moves
                 }
                 Plan::MoveSpecific(_from, to) => {
                     disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
@@ -7407,6 +7448,60 @@ mod plan_tests {
                 },
                 _ => {
                     true
+                }
+            }
+        }
+        
+        fn grow_rather_than_demolish_if_no_winning_plans_exist(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,1), Spades, Two);
+            
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Green, Pips::One);
+
+            add_space(&mut board, (0,-1), Diamonds, Eight);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![
+                Card { suit: Diamonds, value: Queen },
+                Card { suit: Spades, value: King },
+                Card { suit: Spades, value: Ace }
+            ];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Grow((0,-1), _)) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
                 }
             }
         }
