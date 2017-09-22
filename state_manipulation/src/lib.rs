@@ -5283,7 +5283,7 @@ fn get_plan(
         }
     }
 
-    let build_targets = get_all_build_targets_set(board, colour);
+    let build_targets = get_all_build_targets(board, colour);
 
     let buildable_empty_disruption_targets: Vec<(i8, i8)> = build_targets
         .iter()
