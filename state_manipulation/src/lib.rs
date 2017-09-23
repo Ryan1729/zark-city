@@ -4586,13 +4586,8 @@ fn get_fly_specific(
 
     //2 for 1 if possible
     adjacent_empty_spaces.sort_by_key(|key| {
-        if empty_disruption_targets.contains(key) {
-            //keep at the front
-            0u8
-        } else {
-            //move to the end
-            255u8
-        }
+        empty_disruption_targets.iter().position(|k| k == *key)
+        .unwrap_or(<usize>::max_value())
     });
 
     //Find suggested place to fly from
@@ -4771,7 +4766,7 @@ fn get_high_priority_plans(
                 }
                 
                 fn get_grow_plan(board: &Board, stashes: &Stashes, occupied_spaces:&Vec<(i8,i8)>, colour: PieceColour, pips: Pips) -> Option<Plan> {
-                    if stashes[colour][pips] == NoneLeft {
+                    if pips == Pips::Three || stashes[colour][pips.higher()] == NoneLeft {
                         return None;
                     }
                     
@@ -4800,6 +4795,8 @@ fn get_high_priority_plans(
                             .and_then(|space| space.pieces.get(piece_index).map(|p| p.pips));
                         if let Some(pips) = possible_pips {
                             if stashes[colour][pips] == NoneLeft {
+                                println!("{:?} NoneLeft", pips);
+                                println!("occupied_spaces -> {:?}", occupied_spaces);
                                 if let Some(grow_plan) = get_grow_plan(board, stashes, &occupied_spaces, colour, pips) {
                                     *plan = grow_plan
                                 }
@@ -4815,9 +4812,9 @@ fn get_high_priority_plans(
             let blanks = empty_disruption_targets
                 .iter()
                 .chain(adjacent_keys.iter().filter(|key| !board.contains_key(key)));
+            let source = occupied_spaces.first().cloned().unwrap();
             for &target_blank in blanks {
                 if has_ace && occupied_spaces.len() != 0 {
-                    let source = occupied_spaces.first().cloned().unwrap();
                     if fly_from_targets(&board, &source).contains(&target_blank) &&
                         flight_does_not_create_non_private_block(
                             &board,
@@ -5310,16 +5307,12 @@ fn get_plan(
 
     //2 for 1 if possible
     occupied_spaces.sort_by_key(|key| {
-        if occupied_disruption_targets.contains(key) ||
-            occupied_completable_disruption_targets.contains(key)
-        {
-            //keep at the front
-            0u8
-        } else {
-            //move to the end
-            255u8
-        }
+        occupied_disruption_targets.iter().position(|k| k == key).or_else(||
+            occupied_completable_disruption_targets.iter().position(|k| k == key)
+        ).unwrap_or(<usize>::max_value())
     });
+    
+    println!("occupied_spaces {:?}", occupied_spaces);
 
     let most_winning_moves = |plan: &Plan| {
         let mut board_copy = board.clone();
@@ -5458,7 +5451,7 @@ fn get_plan(
     if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
-
+    
     plans.append(&mut get_high_priority_plans(
         board,
         stashes,
@@ -5478,6 +5471,7 @@ fn get_plan(
     plans.sort_by_key(&least_opponent_winning_moves);
 
     if let Some(plan) = plans.first().cloned() {
+        println!("plans : {:?}", plans);
         return Some(plan);
     }
 
