@@ -1337,9 +1337,7 @@ unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {
         } else {
             ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
         }
-        ctx.Clear(
-            gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-        );
+        ctx.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
     }
 }
 
@@ -1592,13 +1590,13 @@ fn render_text(
             .flat_map(|g| {
                 if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
                     let gl_rect = rusttype::Rect {
-                        min: origin +
-                            (vector(
+                        min: origin
+                            + (vector(
                                 screen_rect.min.x as f32 / screen_width as f32 - 0.5,
                                 1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
                             )) * 2.0,
-                        max: origin +
-                            (vector(
+                        max: origin
+                            + (vector(
                                 screen_rect.max.x as f32 / screen_width as f32 - 0.5,
                                 1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
                             )) * 2.0,

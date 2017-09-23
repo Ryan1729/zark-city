@@ -411,8 +411,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
             let mut piece_texture_spec = piece_texture_spec(piece);
 
-            let on_piece = on_card &&
-                point_in_square_on_card(
+            let on_piece = on_card
+                && point_in_square_on_card(
                     (card_mouse_x, card_mouse_y),
                     (x, y),
                     half_piece_scale,
@@ -482,8 +482,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             let mut backward_arrow_texture_spec = forward_arrow_texture_spec.clone();
 
             if pieces.len() > (space_offset * PIECES_PER_PAGE) as _ {
-                let on_forward = on_card &&
-                    point_in_square_on_card(
+                let on_forward = on_card
+                    && point_in_square_on_card(
                         (card_mouse_x, card_mouse_y),
                         (forward_x, forward_y),
                         scale,
@@ -533,8 +533,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                 let backward_arrow_matrix = mat4x4_mul(&backward_camera_matrix, &card_matrix);
 
-                let on_backward = on_card &&
-                    point_in_square_on_card(
+                let on_backward = on_card
+                    && point_in_square_on_card(
                         (card_mouse_x, card_mouse_y),
                         (backward_x, backward_y),
                         scale,
@@ -1122,8 +1122,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             (v1 + v2 + v3, std::cmp::min(v1, std::cmp::min(v2, v3)))
                         }
                     };
-                    state.turn = if pips_selected >= pips_needed &&
-                        smallest_card_value > pips_selected - pips_needed
+                    state.turn = if pips_selected >= pips_needed
+                        && smallest_card_value > pips_selected - pips_needed
                     {
                         state.message.timeout = 0;
                         ConvertSlashDemolishWhich(
@@ -1135,8 +1135,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             pips_selected - pips_needed,
                         )
                     } else {
-                        if pips_selected >= pips_needed &&
-                            smallest_card_value <= pips_selected - pips_needed
+                        if pips_selected >= pips_needed
+                            && smallest_card_value <= pips_selected - pips_needed
                         {
                             state.message = Message {
                                 text: "You cannot discard redundant face cards to get extra draws"
@@ -1210,16 +1210,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         Pips::One => stash[Pips::One] != NoneLeft,
                         Pips::Two => stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft,
                         Pips::Three => {
-                            stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft ||
-                                stash[Pips::Three] != NoneLeft
+                            stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft
+                                || stash[Pips::Three] != NoneLeft
                         }
                     }
                 } else {
                     false
                 };
 
-                if can_convert &&
-                    turn_options_button(
+                if can_convert
+                    && turn_options_button(
                         p,
                         &mut state.ui_context,
                         "Convert",
@@ -1236,8 +1236,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         card_index_3,
                         cards_owed,
                     );
-                } else if !can_convert ||
-                    turn_options_button(
+                } else if !can_convert
+                    || turn_options_button(
                         p,
                         &mut state.ui_context,
                         "Demolish",
@@ -1310,8 +1310,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     selected_pips = Some(Pips::Three);
                 }
 
-                if has_one && piece.pips > Pips::One &&
-                    turn_options_button(
+                if has_one && piece.pips > Pips::One
+                    && turn_options_button(
                         p,
                         &mut state.ui_context,
                         "Small",
@@ -1322,8 +1322,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     ) {
                     selected_pips = Some(Pips::One);
                 }
-                if has_two && piece.pips >= Pips::Two &&
-                    turn_options_button(
+                if has_two && piece.pips >= Pips::Two
+                    && turn_options_button(
                         p,
                         &mut state.ui_context,
                         "Medium",
@@ -1334,8 +1334,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     ) {
                     selected_pips = Some(Pips::Two);
                 }
-                if has_three && piece.pips >= Pips::Three &&
-                    turn_options_button(
+                if has_three && piece.pips >= Pips::Three
+                    && turn_options_button(
                         p,
                         &mut state.ui_context,
                         "Large",
@@ -1654,18 +1654,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     match turn_option {
                         1 => {
                             //Grow
-                            let chosen_piece = if let Some(Plan::Grow(space_coords, piece_index)) = possible_plan {
+                            let chosen_piece =
+                                if let Some(Plan::Grow(space_coords, piece_index)) = possible_plan {
                                     Some((space_coords, piece_index))
                                 } else {
-                                let occupied_spaces: Vec<_> =
-                                    get_all_spaces_occupied_by(&state.board, colour);
+                                    let occupied_spaces: Vec<_> =
+                                        get_all_spaces_occupied_by(&state.board, colour);
 
-                                if let Some(space_coords) = rng.choose(&occupied_spaces) {
-                                    choose_piece(&state.board, space_coords, colour)
-                                } else {
-                                    None
-                                }
-                            };
+                                    if let Some(space_coords) = rng.choose(&occupied_spaces) {
+                                        choose_piece(&state.board, space_coords, colour)
+                                    } else {
+                                        None
+                                    }
+                                };
 
                             if let Some((space_coords, piece_index)) = chosen_piece {
                                 match grow_if_available(
@@ -2129,8 +2130,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                                                                 .iter()
                                                                 .count();
 
-                                                        new_combined_power_block_count <=
-                                                            combined_power_block_count
+                                                        new_combined_power_block_count
+                                                            <= combined_power_block_count
                                                     } else {
                                                         false
                                                     },
@@ -2537,7 +2538,7 @@ fn apply_plan(
 ) {
     match *plan {
         Plan::Grow(target, piece_index) => {
-            match grow_if_available(target,piece_index,board,&mut stashes[colour]) {
+            match grow_if_available(target, piece_index, board, &mut stashes[colour]) {
                 _ => {}
             };
         }
@@ -2709,8 +2710,8 @@ fn get_c_slash_d_selections(
             Pips::One => stash[Pips::One] != NoneLeft,
             Pips::Two => stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft,
             Pips::Three => {
-                stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft ||
-                    stash[Pips::Three] != NoneLeft
+                stash[Pips::One] != NoneLeft || stash[Pips::Two] != NoneLeft
+                    || stash[Pips::Three] != NoneLeft
             }
         };
 
@@ -3005,13 +3006,13 @@ fn other_colour_occupation_count(
     keys: &Vec<(i8, i8)>,
     colour: PieceColour,
 ) -> usize {
-    keys.iter()
-        .fold(0, |acc, key| {
-            acc + board
+    keys.iter().fold(0, |acc, key| {
+        acc
+            + board
                 .get(key)
                 .map(|s| s.pieces.filtered_indicies(|p| p.colour != colour).len())
                 .unwrap_or(0)
-        })
+    })
 }
 
 const HUD_LINE: f32 = 0.675;
@@ -3256,11 +3257,11 @@ fn point_in_square_on_card(
     if rotated {
         //swapping x and y and inverting y is equivalent to rotation by 90 degrees
         //This trick appears to only works with a square
-        (-point_y - box_center_x).abs() <= square_size &&
-            (point_x - box_center_y).abs() <= square_size
+        (-point_y - box_center_x).abs() <= square_size
+            && (point_x - box_center_y).abs() <= square_size
     } else {
-        (point_x - box_center_x).abs() <= square_size &&
-            (point_y - box_center_y).abs() <= square_size
+        (point_x - box_center_x).abs() <= square_size
+            && (point_y - box_center_y).abs() <= square_size
     }
 }
 
@@ -3825,7 +3826,7 @@ fn is_power_block(board: &Board, block: Block) -> bool {
     }
 }
 
-fn can_cards_form_block(mut cards: [Card; 3]) -> bool {    
+fn can_cards_form_block(mut cards: [Card; 3]) -> bool {
     cards.sort();
 
     match (cards[0], cards[1], cards[2]) {
@@ -3962,8 +3963,8 @@ fn draw_hud(
         if selected_index.is_none() {
             let (card_mouse_x, card_mouse_y) = (hud_mouse_x - card_x, hud_mouse_y - card_y);
 
-            let on_card = (card_mouse_x).abs() <= CARD_RATIO * card_scale &&
-                (card_mouse_y).abs() <= card_scale;
+            let on_card = (card_mouse_x).abs() <= CARD_RATIO * card_scale
+                && (card_mouse_y).abs() <= card_scale;
 
             if on_card {
                 selected_index = Some(i);
@@ -4585,8 +4586,10 @@ fn get_fly_specific(
 
     //2 for 1 if possible
     adjacent_empty_spaces.sort_by_key(|key| {
-        empty_disruption_targets.iter().position(|k| k == *key)
-        .unwrap_or(<usize>::max_value())
+        empty_disruption_targets
+            .iter()
+            .position(|k| k == *key)
+            .unwrap_or(<usize>::max_value())
     });
 
     //Find suggested place to fly from
@@ -4616,7 +4619,7 @@ fn flight_does_not_create_non_private_block(
     colour: PieceColour,
 ) -> bool {
     flight_does_not_create_non_private_power_block(board, source, target, colour)
-    && flight_does_not_create_non_private_completable_block(board, source, target, colour)
+        && flight_does_not_create_non_private_completable_block(board, source, target, colour)
 }
 
 fn flight_does_not_create_non_private_power_block(
@@ -4763,30 +4766,35 @@ fn get_high_priority_plans(
                         plans.push(plan);
                     }
                 }
-                
-                fn get_grow_plan(board: &Board, stashes: &Stashes, occupied_spaces:&Vec<(i8,i8)>, colour: PieceColour, pips: Pips) -> Option<Plan> {
+
+                fn get_grow_plan(
+                    board: &Board,
+                    stashes: &Stashes,
+                    occupied_spaces: &Vec<(i8, i8)>,
+                    colour: PieceColour,
+                    pips: Pips,
+                ) -> Option<Plan> {
                     if pips == Pips::Three || stashes[colour][pips.higher()] == NoneLeft {
                         return None;
                     }
-                    
+
                     for target in occupied_spaces.iter() {
-                        let possible_index = board
-                            .get(target)
-                            .and_then(|space| space
-                                        .pieces
-                                        .filtered_indicies(|p| p.colour == colour && p.pips == pips)
-                                        .first()
-                                        .cloned()
-                                    );
-                                    
+                        let possible_index = board.get(target).and_then(|space| {
+                            space
+                                .pieces
+                                .filtered_indicies(|p| p.colour == colour && p.pips == pips)
+                                .first()
+                                .cloned()
+                        });
+
                         if let Some(piece_index) = possible_index {
                             return Some(Plan::Grow(*target, piece_index));
                         }
                     }
-                    
+
                     None
                 }
-                
+
                 for plan in plans.iter_mut() {
                     if let Plan::ConvertSlashDemolish(c_slash_d_target, piece_index) = *plan {
                         let possible_pips = board
@@ -4794,7 +4802,9 @@ fn get_high_priority_plans(
                             .and_then(|space| space.pieces.get(piece_index).map(|p| p.pips));
                         if let Some(pips) = possible_pips {
                             if stashes[colour][pips] == NoneLeft {
-                                if let Some(grow_plan) = get_grow_plan(board, stashes, &occupied_spaces, colour, pips) {
+                                if let Some(grow_plan) =
+                                    get_grow_plan(board, stashes, &occupied_spaces, colour, pips)
+                                {
                                     *plan = grow_plan
                                 }
                             }
@@ -4812,8 +4822,8 @@ fn get_high_priority_plans(
                     .chain(adjacent_keys.iter().filter(|key| !board.contains_key(key)));
                 for &target_blank in blanks {
                     if has_ace && occupied_spaces.len() != 0 {
-                        if fly_from_targets(&board, &source).contains(&target_blank) &&
-                            flight_does_not_create_non_private_block(
+                        if fly_from_targets(&board, &source).contains(&target_blank)
+                            && flight_does_not_create_non_private_block(
                                 &board,
                                 source,
                                 target_blank,
@@ -5007,7 +5017,7 @@ fn get_plan(
         //limit disruption to winning prevention
         let mut disruption_targets = Vec::new();
         let mut empty_disruption_targets = Vec::new();
-        
+
         for plan in other_winning_plans {
             match plan {
                 Plan::Fly(from) => {
@@ -5040,7 +5050,7 @@ fn get_plan(
                     //no point in disrupting where they were
                     //TODO is this ever emitted as a winning plan?
                 }
-                Plan::Grow(_,_) | Plan::Spawn(_) | Plan::DrawThree => {
+                Plan::Grow(_, _) | Plan::Spawn(_) | Plan::DrawThree => {
                     //It is impossible to directly win with these type of moves
                 }
                 Plan::MoveSpecific(_from, to) => {
@@ -5102,61 +5112,81 @@ fn get_plan(
                     .any(|key| occupied_spaces.contains(key))
             });
 
-        fn get_double_fly_targets(board: &Board, used_colours: &Vec<PieceColour>) -> Vec<(i8,i8)>{
-            let spaces_with_pieces: Vec<(i8,i8)> = board.iter().filter_map(|(&key, &space)|
-                if space.pieces.len() > 0 {
+        fn get_double_fly_targets(board: &Board, used_colours: &Vec<PieceColour>) -> Vec<(i8, i8)> {
+            let spaces_with_pieces: Vec<(i8, i8)> = board
+                .iter()
+                .filter_map(|(&key, &space)| if space.pieces.len() > 0 {
                     Some(key)
                 } else {
                     None
-                }
-            ).collect();
-            
+                })
+                .collect();
+
             let mut result = Vec::new();
-            
+
             for &used_colour in used_colours.iter() {
-                let mut card_key_pairs_with_colour : Vec<(Card, (i8,i8))> = spaces_with_pieces.iter()
-                    .filter_map(|key| board
-                                    .get(key)
-                                    .and_then(|space| if space.pieces.filtered_indicies(|p| p.colour == used_colour).len() > 0 {
-                                            Some((space.card, *key))
-                                        } else {
-                                            None
-                                        })
-                            ).collect();
-                
+                let mut card_key_pairs_with_colour: Vec<(Card, (i8, i8))> = spaces_with_pieces
+                    .iter()
+                    .filter_map(|key| {
+                        board.get(key).and_then(|space| {
+                            if space
+                                .pieces
+                                .filtered_indicies(|p| p.colour == used_colour)
+                                .len() > 0
+                            {
+                                Some((space.card, *key))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+
                 card_key_pairs_with_colour.sort_by(|&(c1, _), &(c2, _)| c1.suit.cmp(&c2.suit));
-                
+
                 for card_key_pairs in card_key_pairs_with_colour.windows(3) {
-                    if can_cards_form_block([card_key_pairs[0].0,card_key_pairs[1].0, card_key_pairs[2].0]) {
-                        result.push(card_key_pairs[0].1);
-                        result.push(card_key_pairs[1].1);
-                        result.push(card_key_pairs[2].1);
-                    }
-                }
-                
-                card_key_pairs_with_colour.sort_by(|&(c1, _), &(c2, _)| c1.value.cmp(&c2.value));
-                
-                for card_key_pairs in card_key_pairs_with_colour.windows(3) {
-                    if can_cards_form_block([card_key_pairs[0].0,card_key_pairs[1].0, card_key_pairs[2].0]) {
+                    if can_cards_form_block([
+                        card_key_pairs[0].0,
+                        card_key_pairs[1].0,
+                        card_key_pairs[2].0,
+                    ]) {
                         result.push(card_key_pairs[0].1);
                         result.push(card_key_pairs[1].1);
                         result.push(card_key_pairs[2].1);
                     }
                 }
 
+                card_key_pairs_with_colour.sort_by(|&(c1, _), &(c2, _)| c1.value.cmp(&c2.value));
+
+                for card_key_pairs in card_key_pairs_with_colour.windows(3) {
+                    if can_cards_form_block([
+                        card_key_pairs[0].0,
+                        card_key_pairs[1].0,
+                        card_key_pairs[2].0,
+                    ]) {
+                        result.push(card_key_pairs[0].1);
+                        result.push(card_key_pairs[1].1);
+                        result.push(card_key_pairs[2].1);
+                    }
+                }
             }
-            
+
             result.sort();
             result.dedup();
-            
+
             result
         }
 
         let mut double_fly_targets = get_double_fly_targets(board, &active_colours(stashes));
-        
-        
-        let piece_count = |key: (i8,i8)| board.get(&key).map(|space| space.pieces.len()).unwrap_or(<usize>::max_value());
-        let adjacent_piece_count = |key: &(i8,i8)| {
+
+
+        let piece_count = |key: (i8, i8)| {
+            board
+                .get(&key)
+                .map(|space| space.pieces.len())
+                .unwrap_or(<usize>::max_value())
+        };
+        let adjacent_piece_count = |key: &(i8, i8)| {
             let adjacent_filled_keys: Vec<_> = {
                 let adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
                     .iter()
@@ -5166,21 +5196,23 @@ fn get_plan(
 
                 adjacent_filled_keys
             };
-            
+
             if adjacent_filled_keys.len() == 0 {
                 return <usize>::max_value();
             }
             adjacent_filled_keys
                 .into_iter()
-                .fold(0usize, |acc, adj_key| acc.saturating_add(piece_count(adj_key)))
+                .fold(0usize, |acc, adj_key| {
+                    acc.saturating_add(piece_count(adj_key))
+                })
         };
         double_fly_targets.sort_by_key(&adjacent_piece_count);
-        
+
         let (occupied_double_fly_targets, unoccupied_double_fly_targets): (
             Vec<(i8, i8)>,
             Vec<(i8, i8)>,
-        ) = 
-            double_fly_targets.into_iter()
+        ) = double_fly_targets
+            .into_iter()
             .partition(|key| occupied_spaces.contains(key));
 
         let (mut occupied_disruption_targets, mut unoccupied_disruption_targets): (
@@ -5232,8 +5264,8 @@ fn get_plan(
         sort_and_dedup_targets(&mut occupied_completable_disruption_targets);
 
         unoccupied_completable_disruption_targets.retain(|key| {
-            !(occupied_completable_disruption_targets.contains(key) ||
-                occupied_disruption_targets.contains(key))
+            !(occupied_completable_disruption_targets.contains(key)
+                || occupied_disruption_targets.contains(key))
         });
         sort_and_dedup_targets(&mut unoccupied_completable_disruption_targets);
 
@@ -5241,8 +5273,8 @@ fn get_plan(
             .iter()
             .filter_map(|completable| {
                 let other_colour_count = completable.keys.iter().fold(0, |acc, key| {
-                    acc +
-                        board
+                    acc
+                        + board
                             .get(key)
                             .map(|space| {
                                 space.pieces.filtered_indicies(|p| p.colour != colour).len()
@@ -5305,11 +5337,17 @@ fn get_plan(
 
     //2 for 1 if possible
     occupied_spaces.sort_by_key(|key| {
-        occupied_disruption_targets.iter().position(|k| k == key).or_else(||
-            occupied_completable_disruption_targets.iter().position(|k| k == key)
-        ).unwrap_or(<usize>::max_value())
+        occupied_disruption_targets
+            .iter()
+            .position(|k| k == key)
+            .or_else(|| {
+                occupied_completable_disruption_targets
+                    .iter()
+                    .position(|k| k == key)
+            })
+            .unwrap_or(<usize>::max_value())
     });
-    
+
     println!("occupied_spaces {:?}", occupied_spaces);
 
     let most_winning_moves = |plan: &Plan| {
@@ -5325,8 +5363,8 @@ fn get_plan(
             colour,
         );
 
-        <usize>::max_value() -
-            get_winning_plan(board, stashes, hand, colour)
+        <usize>::max_value()
+            - get_winning_plan(board, stashes, hand, colour)
                 .map(|_| 1)
                 .unwrap_or(0)
     };
@@ -5386,7 +5424,7 @@ fn get_plan(
     if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
-    
+
     plans.append(&mut get_high_priority_plans(
         board,
         stashes,
@@ -5412,8 +5450,8 @@ fn get_plan(
     if cfg!(debug_assertions) {
         println!("looking for lower priority plan");
     }
-    
-    
+
+
     let build_targets = get_all_build_targets(board, colour);
 
     let buildable_empty_disruption_targets: Vec<(i8, i8)> = build_targets
@@ -5453,9 +5491,9 @@ fn get_plan(
                     colour,
                 );
 
-                if get_power_blocks(&board_copy).len() +
-                    get_completable_power_blocks(&board_copy).len() <=
-                    current_block_count
+                if get_power_blocks(&board_copy).len()
+                    + get_completable_power_blocks(&board_copy).len()
+                    <= current_block_count
                 {
                     return Some(plan);
                 }
@@ -5520,8 +5558,8 @@ fn get_plan(
         for source in all_occupied_disruption_targets.iter() {
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
-                if possible_targets.contains(target) &&
-                    flight_does_not_create_non_private_block(&board, *source, *target, colour)
+                if possible_targets.contains(target)
+                    && flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
                 }
@@ -5531,8 +5569,8 @@ fn get_plan(
         for source in occupied_spaces.iter() {
             let possible_targets = fly_from_targets(board, source);
             for target in empty_disruption_targets.iter() {
-                if possible_targets.contains(target) &&
-                    flight_does_not_create_non_private_block(&board, *source, *target, colour)
+                if possible_targets.contains(target)
+                    && flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
                 }
@@ -5545,7 +5583,7 @@ fn get_plan(
         .chain(unoccupied_completable_disruption_targets.iter())
         .cloned()
         .collect();
-        
+
     for &target in all_unoccupied_disruption_targets.iter() {
         let adjacent_filled_keys: Vec<_> = {
             let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
@@ -5590,7 +5628,6 @@ fn get_plan(
     } else {
         None
     }
-
 }
 
 #[cfg(test)]
@@ -7463,7 +7500,7 @@ mod plan_tests {
                 }
             }
         }
-        
+
         fn dont_waste_time_flying_to_recreate_the_same_completeable_block(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7472,7 +7509,7 @@ mod plan_tests {
 
             add_space(&mut board, (0,1), Spades, Two);
             add_piece(&mut board, (0,1), Red, Pips::One);
-            
+
             add_space(&mut board, (0,0), Clubs, Two);
             add_piece(&mut board, (0,0), Green, Pips::One);
 
@@ -7493,7 +7530,7 @@ mod plan_tests {
                 two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
-            
+
             let black_stash = Stash {
                 colour: Black,
                 one_pip: OneLeft,
@@ -7540,7 +7577,7 @@ mod plan_tests {
                 }
             }
         }
-        
+
         fn grow_rather_than_demolish_if_no_winning_plans_exist(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7548,7 +7585,7 @@ mod plan_tests {
             let mut board = HashMap::new();
 
             add_space(&mut board, (0,1), Spades, Two);
-            
+
             add_space(&mut board, (0,0), Clubs, Two);
             add_piece(&mut board, (0,0), Green, Pips::One);
 
@@ -7570,7 +7607,7 @@ mod plan_tests {
                 two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
-            
+
             let stashes = Stashes {
                 player_stash,
                 cpu_stashes: vec![red_stash],
@@ -7594,7 +7631,7 @@ mod plan_tests {
                 }
             }
         }
-        
+
         fn move_towards_double_fly_win(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7603,9 +7640,9 @@ mod plan_tests {
 
             add_space(&mut board, (0,0), Clubs, Eight);
             add_piece(&mut board, (0,0), Red, Pips::One);
-            
+
             add_space(&mut board, (-1,0), Diamonds, Five);
-            
+
             add_space(&mut board, (1,0), Spades, Six);
 
             add_space(&mut board, (0,-1), Spades, Two);
@@ -7613,13 +7650,13 @@ mod plan_tests {
             //double fly win
             add_space(&mut board, (-2,0), Hearts, Seven);
             add_piece(&mut board, (-2,0), Green, Pips::One);
-            
+
             add_space(&mut board, (2,0), Hearts, Eight);
             add_piece(&mut board, (2,0), Green, Pips::One);
-            
+
             add_space(&mut board, (0,-2), Hearts, Nine);
             add_piece(&mut board, (0,-2), Green, Pips::One);
-            
+
             let player_stash = Stash {
                 colour: Green,
                 one_pip: NoneLeft,
@@ -7633,7 +7670,7 @@ mod plan_tests {
                 two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
-            
+
             let stashes = Stashes {
                 player_stash,
                 cpu_stashes: vec![red_stash],
@@ -7653,7 +7690,7 @@ mod plan_tests {
                 }
             }
         }
-        
+
         fn move_towards_double_fly_win_working_with_other_players(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7662,10 +7699,10 @@ mod plan_tests {
 
             add_space(&mut board, (0,0), Clubs, Eight);
             add_piece(&mut board, (0,0), Red, Pips::One);
-            
+
             add_space(&mut board, (-1,0), Diamonds, Five);
             add_piece(&mut board, (-1,0), Black, Pips::One);
-            
+
             add_space(&mut board, (1,0), Spades, Six);
             add_piece(&mut board, (1,0), Blue, Pips::One);
 
@@ -7674,13 +7711,13 @@ mod plan_tests {
             //double fly win
             add_space(&mut board, (-2,0), Hearts, Seven);
             add_piece(&mut board, (-2,0), Green, Pips::One);
-            
+
             add_space(&mut board, (2,0), Hearts, Eight);
             add_piece(&mut board, (2,0), Green, Pips::One);
-            
+
             add_space(&mut board, (0,-2), Hearts, Nine);
             add_piece(&mut board, (0,-2), Green, Pips::One);
-            
+
             let player_stash = Stash {
                 colour: Green,
                 one_pip: NoneLeft,
@@ -7694,7 +7731,7 @@ mod plan_tests {
                 two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
-            
+
             let blue_stash = Stash {
                 colour: Blue,
                 one_pip: TwoLeft,
@@ -7708,7 +7745,7 @@ mod plan_tests {
                 two_pip: ThreeLeft,
                 three_pip: ThreeLeft,
             };
-            
+
             let stashes = Stashes {
                 player_stash,
                 cpu_stashes: vec![black_stash, blue_stash, red_stash],
@@ -7728,7 +7765,7 @@ mod plan_tests {
                 }
             }
         }
-        
+
         fn disrupt_completeable_block_with_three_of_one_colour_over_others(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -7736,30 +7773,30 @@ mod plan_tests {
             let mut board = HashMap::new();
 
             add_space(&mut board, (0,0), Spades, Five);
-            
+
             add_space(&mut board, (0,1), Hearts, Three);
-            
+
             add_space(&mut board, (0,2), Spades, Four);
-            
+
             add_space(&mut board, (1,1), Spades, Seven);
             add_piece(&mut board, (1,1), Red, Pips::Three);
-            
+
             add_space(&mut board, (1,0), Hearts, Seven);
             add_piece(&mut board, (1,0), Black, Pips::One);
 
             add_space(&mut board, (0,-1), Spades, Six);
             add_piece(&mut board, (0,-1), Black, Pips::One);
-            
+
             add_space(&mut board, (-1,-1), Spades, Three);
 
             //should be disrupted
             add_space(&mut board, (-2,-1), Spades, Eight);
             add_piece(&mut board, (-2,-1), Green, Pips::One);
-            
+
             add_space(&mut board, (-1,-2), Spades, Nine);
             add_piece(&mut board, (-1,-2), Green, Pips::One);
             add_piece(&mut board, (-1,-2), Green, Pips::One);
-            
+
             let player_stash = Stash {
                 colour: Green,
                 one_pip: NoneLeft,
