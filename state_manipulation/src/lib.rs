@@ -5545,7 +5545,7 @@ fn get_plan(
         .chain(unoccupied_completable_disruption_targets.iter())
         .cloned()
         .collect();
-    println!("all_unoccupied_disruption_targets {:?}", all_unoccupied_disruption_targets);
+        
     for &target in all_unoccupied_disruption_targets.iter() {
         let adjacent_filled_keys: Vec<_> = {
             let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
@@ -5558,12 +5558,9 @@ fn get_plan(
 
             adjacent_filled_keys
         };
-        println!("adjacent_filled_keys {:?}", adjacent_filled_keys);
         for adjacent in adjacent_filled_keys.iter() {
             for &(x, y) in FOUR_WAY_OFFSETS.iter() {
-                println!("(x, y) {:?}", (x, y));
                 if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                    println!("{:?} to {:?}", target, (x + adjacent.0, y + adjacent.1));
                     plans.push(Plan::Move(*adjacent));
                 }
             }
@@ -5586,7 +5583,14 @@ fn get_plan(
     plans.sort_by_key(&most_winning_moves);
     plans.sort_by_key(&least_opponent_winning_moves);
 
-    plans.first().cloned()
+    if plans.len() > 0 {
+        plans.first().cloned()
+    } else if other_winning_plans.len() > 0 && !has_ace {
+        Some(Plan::DrawThree)
+    } else {
+        None
+    }
+
 }
 
 #[cfg(test)]
