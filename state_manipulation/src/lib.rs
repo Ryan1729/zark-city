@@ -4996,8 +4996,10 @@ fn get_plan(
         !has_card_to_complete
     });
 
+    let other_winning_plans_exist = other_winning_plans.len() > 0;
+
     if cfg!(debug_assertions) {
-        if other_winning_plans.len() > 0 {
+        if other_winning_plans_exist {
             println!(
                 "Found {} other player winning plan(s)",
                 other_winning_plans.len()
@@ -5013,7 +5015,7 @@ fn get_plan(
         unoccupied_completable_disruption_targets,
         occupied_disruption_targets,
         occupied_completable_disruption_targets,
-    ) = if other_winning_plans.len() > 0 {
+    ) = if other_winning_plans_exist {
         //limit disruption to winning prevention
         let mut disruption_targets = Vec::new();
         let mut empty_disruption_targets = Vec::new();
@@ -5623,7 +5625,7 @@ fn get_plan(
 
     if plans.len() > 0 {
         plans.first().cloned()
-    } else if other_winning_plans.len() > 0 && !has_ace {
+    } else if other_winning_plans_exist && !has_ace {
         Some(Plan::DrawThree)
     } else {
         None
