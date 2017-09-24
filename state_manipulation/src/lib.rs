@@ -2197,7 +2197,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         match card.value {
                             Two | Ten => 100,
                             Jack => 80,
-                            //TODO are theer cases where this
+                            //TODO are there cases where this
                             //hueristic is clearly wrong?
                             Queen => 70,
                             Ace => 60,
@@ -4879,11 +4879,13 @@ fn get_c_slash_d_plan(
             });
 
             other_player_pieces.sort_by_key(|&i| {
-                space
-                    .pieces
-                    .get(i)
-                    .map(|p| stashes[p.colour].used_count())
-                    .unwrap_or(0)
+                //target the pieces of the colour with the most pieces out
+                <u8>::max_value()
+                    - space
+                        .pieces
+                        .get(i)
+                        .map(|p| stashes[p.colour].used_count())
+                        .unwrap_or(0)
             });
 
             other_player_pieces.pop()
@@ -5350,8 +5352,6 @@ fn get_plan(
             .unwrap_or(<usize>::max_value())
     });
 
-    println!("occupied_spaces {:?}", occupied_spaces);
-
     let most_winning_moves = |plan: &Plan| {
         let mut board_copy = board.clone();
         let mut stashes_copy = stashes.clone();
@@ -5628,7 +5628,40 @@ fn get_plan(
     } else if other_winning_plans_exist && !has_ace {
         Some(Plan::DrawThree)
     } else {
-        None
+        let other_colour_concentrations: Vec<(i8, i8)> = board
+            .keys()
+            .filter(|key| {
+                board
+                    .get(key)
+                    .map(|space| {
+                        space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
+                    })
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        println!(
+            "other_colour_concentrations : {:?}",
+            other_colour_concentrations
+        );
+
+        plans.append(&mut get_high_priority_plans(
+            board,
+            stashes,
+            hand,
+            rng,
+            &other_colour_concentrations,
+            &occupied_spaces,
+            &empty_disruption_targets,
+            colour,
+        ));
+
+        if plans.len() > 0 {
+            plans.first().cloned()
+        } else {
+            None
+        }
     }
 }
 
@@ -7827,6 +7860,61 @@ mod plan_tests {
             let hand = vec![Card { suit: Clubs, value: Five }];
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Black);
+
+            match plan {
+                Some(Plan::Move((-1,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+        fn disrupt_three_pieces_on_a_corner_card_if_nothing_else_is_pressing(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Spades, Five);
+
+            add_space(&mut board, (-1,0), Hearts, Four);
+            add_piece(&mut board, (-1,0), Red, Pips::Three);
+
+            add_space(&mut board, (0,-1), Spades, Two);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+
+            //should be disrupted
+            add_space(&mut board, (-1,-1), Spades, Seven);
+            add_piece(&mut board, (-1,-1), Green, Pips::One);
+            add_piece(&mut board, (-1,-1), Green, Pips::One);
+            add_piece(&mut board, (-1,-1), Green, Pips::One);
+
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Clubs, value: Five }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
                 Some(Plan::Move((-1,-1))) => {
