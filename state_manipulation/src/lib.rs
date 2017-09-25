@@ -5624,44 +5624,104 @@ fn get_plan(
     plans.sort_by_key(&least_opponent_winning_moves);
 
     if plans.len() > 0 {
-        plans.first().cloned()
-    } else if other_winning_plans_exist && !has_ace {
-        Some(Plan::DrawThree)
-    } else {
-        let other_colour_concentrations: Vec<(i8, i8)> = board
-            .keys()
-            .filter(|key| {
+        return plans.first().cloned();
+    }
+    if other_winning_plans_exist && !has_ace {
+        return Some(Plan::DrawThree);
+    }
+
+
+    let other_colour_concentrations: Vec<(i8, i8)> = board
+        .keys()
+        .filter(|key| {
+            board
+                .get(key)
+                .map(|space| {
+                    space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
+                })
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+
+    println!(
+        "other_colour_concentrations : {:?}",
+        other_colour_concentrations
+    );
+
+    plans.append(&mut get_high_priority_plans(
+        board,
+        stashes,
+        hand,
+        rng,
+        &other_colour_concentrations,
+        &occupied_spaces,
+        &empty_disruption_targets,
+        colour,
+    ));
+
+    if plans.len() > 0 {
+        return plans.first().cloned();
+    }
+
+    if has_number_card {
+        fn get_this_colour_only_block_count(board: &Board, colour: PieceColour) -> usize {
+            let has_no_other_colour_pieces = |key| {
                 board
                     .get(key)
                     .map(|space| {
-                        space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
+                        space.pieces.filtered_indicies(|p| p.colour != colour).len() == 0
                     })
                     .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
+            };
 
-        println!(
-            "other_colour_concentrations : {:?}",
-            other_colour_concentrations
-        );
-
-        plans.append(&mut get_high_priority_plans(
-            board,
-            stashes,
-            hand,
-            rng,
-            &other_colour_concentrations,
-            &occupied_spaces,
-            &empty_disruption_targets,
-            colour,
-        ));
-
-        if plans.len() > 0 {
-            plans.first().cloned()
-        } else {
-            None
+            get_completable_power_blocks(&board)
+                .iter()
+                .filter(|completable| {
+                    completable.keys.iter().all(&has_no_other_colour_pieces)
+                })
+                .count()
         }
+
+        let current_only_us_block_count = get_this_colour_only_block_count(&board, colour);
+
+        let mut number_cards: Vec<_> = hand.iter()
+            .enumerate()
+            .filter(|&(_, c)| c.is_number())
+            .map(|(i, _)| i)
+            .collect();
+        //the cpu's choices should be a function of the rng
+        number_cards.sort();
+
+        for target in build_targets.iter() {
+            for card_index in number_cards.iter() {
+                let plan = Plan::Build(*target, *card_index);
+                let mut board_copy = board.clone();
+                let mut stashes_copy = stashes.clone();
+                let mut hand_copy = hand.clone();
+
+                apply_plan(
+                    &mut board_copy,
+                    &mut stashes_copy,
+                    &mut hand_copy,
+                    &plan,
+                    colour,
+                );
+
+                if get_this_colour_only_block_count(&board_copy, colour)
+                    > current_only_us_block_count
+                {
+                    plans.push(plan);
+                }
+            }
+        }
+    }
+
+
+    if plans.len() > 0 {
+        plans.first().cloned()
+    } else {
+        None
     }
 }
 
@@ -7918,6 +7978,62 @@ mod plan_tests {
 
             match plan {
                 Some(Plan::Move((-1,-1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+
+
+        fn complete_blocks_when_you_are_the_sole_controller(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Clubs, Two);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+            add_piece(&mut board, (0,0), Red, Pips::One);
+
+            add_space(&mut board, (0,-1), Spades, Two);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+
+            add_space(&mut board, (0,-2), Diamonds, Four);
+
+            add_space(&mut board, (0,-3), Diamonds, Seven);
+
+            add_space(&mut board, (0,-4), Clubs, Eight);
+            add_piece(&mut board, (0,-4), Green, Pips::One);
+
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Hearts, value: Two }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Build(_, _)) => {
                     true
                 },
                 _ => {
