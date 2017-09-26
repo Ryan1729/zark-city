@@ -5377,6 +5377,10 @@ fn get_plan(
             .unwrap_or(<usize>::max_value())
     });
 
+    if cfg!(debug_assertions) {
+        println!("occupied_spaces {:?}", occupied_spaces);
+    }
+
     let most_winning_moves = |plan: &Plan| {
         let mut board_copy = board.clone();
         let mut stashes_copy = stashes.clone();
@@ -5474,10 +5478,72 @@ fn get_plan(
         return Some(plan);
     }
 
+    let other_colour_concentrations: Vec<(i8, i8)> = board
+        .keys()
+        .filter(|key| {
+            board
+                .get(key)
+                .map(|space| {
+                    space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
+                })
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+
+    if cfg!(debug_assertions) {
+        println!(
+            "other_colour_concentrations : {:?}",
+            other_colour_concentrations
+        );
+    }
+
+    plans.append(&mut get_high_priority_plans(
+        board,
+        stashes,
+        hand,
+        rng,
+        &other_colour_concentrations,
+        &occupied_spaces,
+        &empty_disruption_targets,
+        colour,
+    ));
+
+    if let Some(plan) = plans.first().cloned() {
+        return Some(plan);
+    }
+
     if cfg!(debug_assertions) {
         println!("looking for lower priority plan");
     }
 
+    let all_unoccupied_disruption_targets: Vec<_> = unoccupied_disruption_targets
+        .iter()
+        .chain(unoccupied_completable_disruption_targets.iter())
+        .chain(other_colour_concentrations.iter())
+        .cloned()
+        .collect();
+
+    for &target in all_unoccupied_disruption_targets.iter() {
+        let adjacent_filled_keys: Vec<_> = {
+            let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
+                .iter()
+                .map(|&(x, y)| (x + target.0, y + target.1))
+                .filter(|key| board.get(key).is_some())
+                .collect();
+
+            rng.shuffle(&mut adjacent_filled_keys);
+
+            adjacent_filled_keys
+        };
+        for adjacent in adjacent_filled_keys.iter() {
+            for &(x, y) in FOUR_WAY_OFFSETS.iter() {
+                if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
+                    plans.push(Plan::Move(*adjacent));
+                }
+            }
+        }
+    }
 
     let build_targets = get_all_build_targets(board, colour);
 
@@ -5605,33 +5671,6 @@ fn get_plan(
         }
     }
 
-    let all_unoccupied_disruption_targets: Vec<_> = unoccupied_disruption_targets
-        .iter()
-        .chain(unoccupied_completable_disruption_targets.iter())
-        .cloned()
-        .collect();
-
-    for &target in all_unoccupied_disruption_targets.iter() {
-        let adjacent_filled_keys: Vec<_> = {
-            let mut adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
-                .iter()
-                .map(|&(x, y)| (x + target.0, y + target.1))
-                .filter(|key| board.get(key).is_some())
-                .collect();
-
-            rng.shuffle(&mut adjacent_filled_keys);
-
-            adjacent_filled_keys
-        };
-        for adjacent in adjacent_filled_keys.iter() {
-            for &(x, y) in FOUR_WAY_OFFSETS.iter() {
-                if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                    plans.push(Plan::Move(*adjacent));
-                }
-            }
-        }
-    }
-
     for target in occupied_disruption_targets
         .iter()
         .chain(occupied_completable_disruption_targets.iter())
@@ -5653,40 +5692,6 @@ fn get_plan(
     }
     if other_winning_plans_exist && !has_ace {
         return Some(Plan::DrawThree);
-    }
-
-
-    let other_colour_concentrations: Vec<(i8, i8)> = board
-        .keys()
-        .filter(|key| {
-            board
-                .get(key)
-                .map(|space| {
-                    space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
-                })
-                .unwrap_or(false)
-        })
-        .cloned()
-        .collect();
-
-    println!(
-        "other_colour_concentrations : {:?}",
-        other_colour_concentrations
-    );
-
-    plans.append(&mut get_high_priority_plans(
-        board,
-        stashes,
-        hand,
-        rng,
-        &other_colour_concentrations,
-        &occupied_spaces,
-        &empty_disruption_targets,
-        colour,
-    ));
-
-    if plans.len() > 0 {
-        return plans.first().cloned();
     }
 
     if has_number_card {
@@ -8211,6 +8216,7 @@ mod plan_tests {
 
                 add_space(&mut board, (1, 2), Diamonds, Four);
                 add_piece(&mut board, (1, 2), Red, Pips::One);
+                add_piece(&mut board, (1, 2), Green, Pips::One);
 
                 //disruptable block
                 add_space(&mut board, (-1, -1), Clubs, Ten);
