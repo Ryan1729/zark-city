@@ -5109,12 +5109,29 @@ fn get_plan(
             targets.sort_by_key(&other_colour_occupation_count_sorter);
         };
 
+        let has_any_other_colour_pieces = |key: (i8, i8)| {
+            board
+                .get(&key)
+                .map(|space| {
+                    space.pieces.filtered_indicies(|p| p.colour != colour).len() > 0
+                })
+                .unwrap_or(false)
+        };
+
         let (occupied_power_blocks, unoccupied_power_blocks): (Vec<Block>, Vec<Block>) =
-            power_blocks.iter().cloned().partition(|block| {
-                block_to_coords(*block)
-                    .iter()
-                    .any(|key| occupied_spaces.contains(key))
-            });
+            power_blocks
+                .iter()
+                .cloned()
+                .filter(|block| {
+                    block_to_coords(*block)
+                        .iter()
+                        .any(|key| (&has_any_other_colour_pieces)(*key))
+                })
+                .partition(|block| {
+                    block_to_coords(*block)
+                        .iter()
+                        .any(|key| occupied_spaces.contains(key))
+                });
 
         fn get_double_fly_targets(board: &Board, used_colours: &Vec<PieceColour>) -> Vec<(i8, i8)> {
             let spaces_with_pieces: Vec<(i8, i8)> = board
@@ -5243,12 +5260,20 @@ fn get_plan(
         let (occupied_completable_power_blocks, unoccupied_completable_power_blocks): (
             Vec<CompletableBlock>,
             Vec<CompletableBlock>,
-        ) = completable_power_blocks.iter().partition(|completable| {
-            completable
-                .keys
-                .iter()
-                .any(|key| occupied_spaces.contains(key))
-        });
+        ) = completable_power_blocks
+            .iter()
+            .filter(|completable| {
+                completable
+                    .keys
+                    .iter()
+                    .any(|key| (&has_any_other_colour_pieces)(*key))
+            })
+            .partition(|completable| {
+                completable
+                    .keys
+                    .iter()
+                    .any(|key| occupied_spaces.contains(key))
+            });
 
         let (
             mut occupied_completable_disruption_targets,
@@ -7987,6 +8012,115 @@ mod plan_tests {
             }
         }
 
+        fn dont_rip_apart_blocks_only_you_are_on_if_there_is_another_option(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (-1,0), Clubs, Two);
+            add_piece(&mut board, (-1,0), Green, Pips::One);
+
+            add_space(&mut board, (-2,0), Spades, Two);
+            add_piece(&mut board, (-2,0), Green, Pips::One);
+
+            add_space(&mut board, (0,-1), Hearts, Five);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+
+            add_space(&mut board, (0,-2), Clubs, Five);
+            add_piece(&mut board, (0,-2), Red, Pips::One);
+
+            add_space(&mut board, (-2,1), Diamonds, Seven);
+
+            //the other option
+            add_space(&mut board, (-2,2), Spades, Eight);
+            add_piece(&mut board, (-2,2), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Clubs, value: Ace }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::FlySpecific((0, -1), _))|Some(Plan::FlySpecific((0, -2), _)) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
+        fn do_rip_apart_blocks_only_you_are_on_if_there_is_not_another_option(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (-1,0), Clubs, Two);
+            add_piece(&mut board, (-1,0), Green, Pips::One);
+
+            add_space(&mut board, (-2,0), Spades, Two);
+            add_piece(&mut board, (-2,0), Green, Pips::One);
+
+            add_space(&mut board, (0,-1), Hearts, Five);
+            add_piece(&mut board, (0,-1), Red, Pips::One);
+
+            add_space(&mut board, (0,-2), Clubs, Five);
+            add_piece(&mut board, (0,-2), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Clubs, value: Ace }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::FlySpecific((0, -1), _))|Some(Plan::FlySpecific((0, -2), _)) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
 
         fn complete_blocks_when_you_are_the_sole_controller(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
