@@ -2730,12 +2730,15 @@ fn convert_if_possible(
     stashes: &mut Stashes,
     dealing_stuff: Option<(&mut Vec<Card>, &mut Vec<Card>, &mut StdRng, u8)>,
     hand: &mut Vec<Card>,
-    selected_indicies: Vec<usize>,
+    mut selected_indicies: Vec<usize>,
     target: (i8, i8),
     piece_index: usize,
     piece: Piece,
     colour: PieceColour,
 ) -> bool {
+    //sort largest first so we can iterate through them to remove them from the hand 
+    selected_indicies.sort_by(|a, b| b.cmp(a));
+    
     let selected_non_face_card = !selected_indicies
         .iter()
         .all(|&i| hand.get(i).map(|c| !c.is_number()).unwrap_or(false));
@@ -2791,10 +2794,13 @@ fn demolish_if_possible(
     stashes: &mut Stashes,
     dealing_stuff: Option<(&mut Vec<Card>, &mut Vec<Card>, &mut StdRng, u8)>,
     hand: &mut Vec<Card>,
-    selected_indicies: Vec<usize>,
+    mut selected_indicies: Vec<usize>,
     target: (i8, i8),
     piece_index: usize,
 ) -> bool {
+    //sort largest first so we can iterate through them to remove them from the hand 
+    selected_indicies.sort_by(|a, b| b.cmp(a));
+    
     if let Some(space) = board.get_mut(&target) {
         if let Some(piece) = space.pieces.remove(piece_index) {
             stashes[piece.colour].add(piece);
