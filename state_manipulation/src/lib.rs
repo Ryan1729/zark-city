@@ -2579,7 +2579,7 @@ fn apply_plan(
                 //We always convert if possible since the only reason you'd want to
                 //demolish is to save a piece in your stash for a future turn, and this
                 //function is only meant to look one turn ahead.
-
+                println!("apply_plan ConvertSlashDemolish");
                 match selections {
                     Some((selected_indicies, true, _)) => {
                         convert_if_possible(
@@ -2754,7 +2754,6 @@ fn convert_if_possible(
                         stashes[old_piece.colour].add(*old_piece);
 
                         *old_piece = stash_piece;
-
 
                         if let Some((deck, pile, rng, cards_owed)) = dealing_stuff {
                             for i in selected_indicies {
@@ -5639,6 +5638,7 @@ fn get_plan(
                 colour,
             ) {
                 plans.push(f_s);
+                break;
             }
         }
     }
@@ -5661,6 +5661,7 @@ fn get_plan(
                     && flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
+                    break;
                 }
             }
         }
@@ -5672,6 +5673,7 @@ fn get_plan(
                     && flight_does_not_create_non_private_block(&board, *source, *target, colour)
                 {
                     plans.push(Plan::FlySpecific(*source, *target));
+                    break;
                 }
             }
         }
@@ -5683,6 +5685,7 @@ fn get_plan(
     {
         if let Some(plan) = get_c_slash_d_plan(board, hand, stashes, *target, colour) {
             plans.push(plan);
+            break;
         }
     }
 
