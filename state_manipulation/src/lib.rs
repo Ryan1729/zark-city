@@ -1356,9 +1356,17 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             let hand = &mut state.player_hand;
 
                             let pile = &mut state.pile;
-                            card_index_1.map(|i| pile.push(hand.remove(i)));
-                            card_index_2.map(|i| pile.push(hand.remove(i)));
-                            card_index_3.map(|i| pile.push(hand.remove(i)));
+                            
+                            let mut selected_indicies = vec![card_index_1, card_index_2, card_index_3];
+                            
+                            //sort largest first so we can iterate through them to remove them from the hand 
+                            selected_indicies.sort_by(|a, b| b.cmp(a));
+                            
+                            for possible_index in selected_indicies {
+                                if let Some(index) = possible_index {
+                                    pile.push(hand.remove(index));
+                                }
+                            }
 
                             for _ in 0..cards_owed {
                                 if let Some(card) =
@@ -2579,7 +2587,7 @@ fn apply_plan(
                 //We always convert if possible since the only reason you'd want to
                 //demolish is to save a piece in your stash for a future turn, and this
                 //function is only meant to look one turn ahead.
-                println!("apply_plan ConvertSlashDemolish");
+
                 match selections {
                     Some((selected_indicies, true, _)) => {
                         convert_if_possible(
@@ -5678,7 +5686,7 @@ fn get_plan(
             }
         }
     }
-
+    
     for target in occupied_disruption_targets
         .iter()
         .chain(occupied_completable_disruption_targets.iter())
