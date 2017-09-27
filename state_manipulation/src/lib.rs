@@ -5712,22 +5712,38 @@ fn get_plan(
     }
 
     if has_number_card {
+        fn has_no_other_colour_pieces(board: &Board,  colour: PieceColour, key : (i8,i8)) -> bool {
+            board
+                .get(&key)
+                .map(|space| {
+                    space.pieces.filtered_indicies(|p| p.colour != colour).len() == 0
+                })
+                .unwrap_or(false)
+        }
+        
         fn get_this_colour_only_block_count(board: &Board, colour: PieceColour) -> usize {
-            let has_no_other_colour_pieces = |key| {
-                board
-                    .get(key)
-                    .map(|space| {
-                        space.pieces.filtered_indicies(|p| p.colour != colour).len() == 0
-                    })
-                    .unwrap_or(false)
-            };
+            let mut power_block_keys : Vec<(i8,i8)> = Vec::new();
+            
+            for block in get_power_blocks(board) {
+                let coords = block_to_coords(block);
+                
+                power_block_keys.extend(coords.iter());
+            }
 
-            get_completable_power_blocks(&board)
+            let power_block_count = power_block_keys.iter()
+                .filter(|key| has_no_other_colour_pieces(board, colour, **key))
+                .count();
+
+            let completable_power_blocks = get_completable_power_blocks(board);
+
+            let completable_count = completable_power_blocks
                 .iter()
                 .filter(|completable| {
-                    completable.keys.iter().all(&has_no_other_colour_pieces)
+                    completable.keys.iter().all(|key| has_no_other_colour_pieces(board, colour, *key))
                 })
-                .count()
+                .count();
+                
+            power_block_count + completable_count
         }
 
         let current_only_us_block_count = get_this_colour_only_block_count(&board, colour);
