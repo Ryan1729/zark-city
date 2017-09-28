@@ -4827,7 +4827,62 @@ fn get_high_priority_plans(
             };
 
             if adjacent_to_target && !occupys_target {
-                plans.push(Plan::Move(target));
+                let target_power_blocks = get_power_blocks(board).iter()
+                    .filter(|block|{
+                        let coords = block_to_coords(**block);
+                        
+                        coords.iter().any(|key| *key == target)
+                    })
+                    .cloned()
+                    .collect();
+                let target_completable_blocks = get_completable_power_blocks(board)
+                    .iter()
+                    .filter(|block| block.keys.iter().any(|key| *key == target))
+                    .cloned()
+                    .collect();
+                let target_block_keys = get_target_block_keys(&target_power_blocks, &target_completable_blocks, target);
+                
+                let mut intersection : Vec<_> = target_block_keys.into_iter().filter(|&key| 
+                    key != target 
+                    //This assumes movement is reflexive!
+                    && get_valid_move_targets(board, key)
+                        .iter()
+                        .any(|k| board.get(k)
+                                    .map(|space| space
+                                            .pieces
+                                            .filtered_indicies(|p| p.colour == colour).len() > 0).unwrap_or(false))
+                    
+                ).collect();
+                println!("intersection pre sort {:?}", intersection);
+                if intersection.len() > 1 {
+                    let adjacent_same_colour_piece_count = |key: &(i8, i8)| {
+                        let adjacent_filled_keys: Vec<_> = {
+                            let adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
+                                .iter()
+                                .map(|&(x, y)| (x + key.0, y + key.1))
+                                .filter(|key| board.get(key)
+                                    .map(|space| space.pieces.filtered_indicies(|p| p.colour == colour).len() > 0)
+                                    .unwrap_or(false))
+                                .collect();
+
+                            adjacent_filled_keys
+                        };
+
+                        adjacent_filled_keys
+                            .into_iter()
+                            .fold(0usize, |acc, adj_key| {
+                                acc.saturating_add(piece_count(board, adj_key))
+                            })
+                    };
+                    
+                   intersection.sort_by_key(|key| <usize>::max_value() - &adjacent_same_colour_piece_count(key));
+                    
+                println!("intersection post sort {:?}", intersection);
+                }
+                
+                if let Some(last) = intersection.last() {
+                    plans.push(Plan::Move(*last));
+                }
             }
             if let Some(source) = occupied_spaces.first().cloned() {
                 let blanks = empty_disruption_targets
@@ -4972,6 +5027,32 @@ fn square(x: isize) -> isize {
     x * x
 }
 
+fn get_target_block_keys(power_blocks: &Vec<Block>, completable_power_blocks: &Vec<CompletableBlock>, key : (i8,i8)) -> Vec<(i8,i8)>{
+    let mut power_block_keys = Vec::new();
+
+    for block in power_blocks.iter() {
+        let coords = block_to_coords(*block);
+        if coords.contains(&key) {
+            power_block_keys.extend(coords.iter());
+        }
+    }
+
+    for block in completable_power_blocks.iter() {
+        if block.keys.contains(&key) {
+            power_block_keys.extend(block.keys.iter());
+        }
+    }
+    
+    return power_block_keys;
+}
+
+fn piece_count(board: &Board, key: (i8, i8)) -> usize {
+    board
+        .get(&key)
+        .map(|space| space.pieces.len())
+        .unwrap_or(<usize>::max_value())
+}
+
 fn get_plan(
     board: &Board,
     stashes: &Stashes,
@@ -5095,23 +5176,10 @@ fn get_plan(
         )
     } else {
         let other_colour_occupation_count_sorter = |key: &(i8, i8)| {
-            let mut power_block_keys = Vec::new();
-
-            for block in power_blocks.iter() {
-                let coords = block_to_coords(*block);
-                if coords.contains(key) {
-                    power_block_keys.extend(coords.iter());
-                }
-            }
-
-            for block in completable_power_blocks.iter() {
-                if block.keys.contains(key) {
-                    power_block_keys.extend(block.keys.iter());
-                }
-            }
-
+            let block_keys = get_target_block_keys(&power_blocks, &completable_power_blocks, *key);
+            
             //how many of those spaces are occupied by other colours
-            let count = other_colour_occupation_count(board, &power_block_keys, colour);
+            let count = other_colour_occupation_count(board, &block_keys, colour);
 
             //put the highest count keys in front
             <usize>::max_value() - count
@@ -5213,13 +5281,6 @@ fn get_plan(
 
         let mut double_fly_targets = get_double_fly_targets(board, &active_colours(stashes));
 
-
-        let piece_count = |key: (i8, i8)| {
-            board
-                .get(&key)
-                .map(|space| space.pieces.len())
-                .unwrap_or(<usize>::max_value())
-        };
         let adjacent_piece_count = |key: &(i8, i8)| {
             let adjacent_filled_keys: Vec<_> = {
                 let adjacent_filled_keys: Vec<_> = FOUR_WAY_OFFSETS
@@ -5231,16 +5292,13 @@ fn get_plan(
                 adjacent_filled_keys
             };
 
-            if adjacent_filled_keys.len() == 0 {
-                return <usize>::max_value();
-            }
             adjacent_filled_keys
                 .into_iter()
                 .fold(0usize, |acc, adj_key| {
-                    acc.saturating_add(piece_count(adj_key))
+                    acc.saturating_add(piece_count(board, adj_key))
                 })
         };
-        double_fly_targets.sort_by_key(&adjacent_piece_count);
+        double_fly_targets.sort_by_key(|key| <usize>::max_value() - &adjacent_piece_count(key));
 
         let (occupied_double_fly_targets, unoccupied_double_fly_targets): (
             Vec<(i8, i8)>,
@@ -5447,6 +5505,10 @@ fn get_plan(
         }
     }
 
+    if cfg!(debug_assertions) {
+        println!("get_high_priority_plans unoccupied_disruption_targets");
+    }
+
     plans.append(&mut get_high_priority_plans(
         board,
         stashes,
@@ -5467,6 +5529,10 @@ fn get_plan(
 
     if let Some(plan) = plans.first().cloned() {
         return Some(plan);
+    }
+
+    if cfg!(debug_assertions) {
+        println!("get_high_priority_plans unoccupied_completable_disruption_targets");
     }
 
     plans.append(&mut get_high_priority_plans(
@@ -5509,6 +5575,8 @@ fn get_plan(
             "other_colour_concentrations : {:?}",
             other_colour_concentrations
         );
+        
+        println!("get_high_priority_plans other_colour_concentrations");
     }
 
     plans.append(&mut get_high_priority_plans(
@@ -8214,6 +8282,63 @@ mod plan_tests {
                 }
             }
         }
+    
+        fn given_a_choice_do_not_move_to_a_space_that_has_no_buddy(seed: usize) -> bool {
+            //The buddy is an adjacent piece of the same colour that can respond to C/D
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,-4), Clubs, Two);
+            add_piece(&mut board, (0,-4), Green, Pips::One);
+            add_piece(&mut board, (0,-4), Green, Pips::One);
+            add_piece(&mut board, (0,-4), Green, Pips::One);
+
+            add_space(&mut board, (0,-3), Spades, Two);
+            
+            add_space(&mut board, (1,-4), Diamonds, Two);
+
+            add_space(&mut board, (1,-3), Hearts, Four);
+            add_piece(&mut board, (1,-3), Red, Pips::One);
+            
+            add_space(&mut board, (2,-4), Diamonds, Seven);
+            add_piece(&mut board, (2,-4), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Hearts, value: Two }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Move((0, -3))) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+
     }
 
 
