@@ -4712,6 +4712,7 @@ fn get_high_priority_plans(
     disruption_targets: &Vec<(i8, i8)>,
     occupied_spaces: &Vec<(i8, i8)>,
     empty_disruption_targets: &Vec<(i8, i8)>,
+    all_priority_targets: &Vec<(i8, i8)>,
     colour: PieceColour,
 ) -> Vec<Plan> {
     let mut plans = Vec::new();
@@ -4827,31 +4828,11 @@ fn get_high_priority_plans(
             };
 
             if adjacent_to_target && !occupys_target {
-                let target_power_blocks = get_power_blocks(board).iter()
-                    .filter(|block|{
-                        let coords = block_to_coords(**block);
-                        
-                        coords.iter().any(|key| *key == target)
+                let mut intersection : Vec<_> = all_priority_targets.iter().filter(|&key| 
+                    disruption_targets.contains(&key)
+                    && occupied_spaces.iter().any(|occ_key| {
+                        get_valid_move_targets(board, *occ_key).contains(&key)
                     })
-                    .cloned()
-                    .collect();
-                let target_completable_blocks = get_completable_power_blocks(board)
-                    .iter()
-                    .filter(|block| block.keys.iter().any(|key| *key == target))
-                    .cloned()
-                    .collect();
-                let target_block_keys = get_target_block_keys(&target_power_blocks, &target_completable_blocks, target);
-                
-                let mut intersection : Vec<_> = target_block_keys.into_iter().filter(|&key| 
-                    key != target 
-                    //This assumes movement is reflexive!
-                    && get_valid_move_targets(board, key)
-                        .iter()
-                        .any(|k| board.get(k)
-                                    .map(|space| space
-                                            .pieces
-                                            .filtered_indicies(|p| p.colour == colour).len() > 0).unwrap_or(false))
-                    
                 ).collect();
                 println!("intersection pre sort {:?}", intersection);
                 if intersection.len() > 1 {
@@ -4880,8 +4861,8 @@ fn get_high_priority_plans(
                 println!("intersection post sort {:?}", intersection);
                 }
                 
-                if let Some(last) = intersection.last() {
-                    plans.push(Plan::Move(*last));
+                if let Some(first) = intersection.first() {
+                    plans.push(Plan::Move(**first));
                 }
             }
             if let Some(source) = occupied_spaces.first().cloned() {
@@ -5298,7 +5279,7 @@ fn get_plan(
                     acc.saturating_add(piece_count(board, adj_key))
                 })
         };
-        double_fly_targets.sort_by_key(|key| <usize>::max_value() - &adjacent_piece_count(key));
+        double_fly_targets.sort_by_key(&adjacent_piece_count);
 
         let (occupied_double_fly_targets, unoccupied_double_fly_targets): (
             Vec<(i8, i8)>,
@@ -5505,6 +5486,25 @@ fn get_plan(
         }
     }
 
+    let other_colour_concentrations: Vec<(i8, i8)> = board
+    .keys()
+    .filter(|key| {
+        board
+            .get(key)
+            .map(|space| {
+                space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
+            })
+            .unwrap_or(false)
+    })
+    .cloned()
+    .collect();
+    
+    let all_priority_targets : Vec<_> = unoccupied_disruption_targets.iter()
+        .chain(other_colour_concentrations.iter())
+        .chain(unoccupied_completable_disruption_targets.iter())
+        .cloned()
+        .collect();
+
     if cfg!(debug_assertions) {
         println!("get_high_priority_plans unoccupied_disruption_targets");
     }
@@ -5517,6 +5517,7 @@ fn get_plan(
         &unoccupied_disruption_targets,
         &occupied_spaces,
         &empty_disruption_targets,
+        &all_priority_targets,
         colour,
     ));
 
@@ -5543,6 +5544,7 @@ fn get_plan(
         &unoccupied_completable_disruption_targets,
         &occupied_spaces,
         &empty_disruption_targets,
+        &all_priority_targets,
         colour,
     ));
 
@@ -5556,19 +5558,6 @@ fn get_plan(
     if let Some(plan) = plans.first().cloned() {
         return Some(plan);
     }
-
-    let other_colour_concentrations: Vec<(i8, i8)> = board
-        .keys()
-        .filter(|key| {
-            board
-                .get(key)
-                .map(|space| {
-                    space.pieces.filtered_indicies(|p| p.colour != colour).len() > 1
-                })
-                .unwrap_or(false)
-        })
-        .cloned()
-        .collect();
 
     if cfg!(debug_assertions) {
         println!(
@@ -5587,6 +5576,7 @@ fn get_plan(
         &other_colour_concentrations,
         &occupied_spaces,
         &empty_disruption_targets,
+        &all_priority_targets,
         colour,
     ));
 
