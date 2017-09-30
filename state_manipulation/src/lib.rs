@@ -2257,6 +2257,19 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     [0.0, 0.0, 0.0, 1.0],
                 );
             }
+            
+            if turn_options_button(
+                p,
+                &mut state.ui_context,
+                "New Game",
+                (0.0, 0.125),
+                99,
+                (mouse_x, mouse_y),
+                mouse_button_state,
+            ) {
+                *state = new_state();
+                return false;
+            }
         }
     };
 
@@ -4806,7 +4819,7 @@ fn get_high_priority_plans(
                         get_valid_move_targets(board, *occ_key).contains(&key)
                     })
                 ).collect();
-                println!("intersection pre sort {:?}", intersection);
+
                 if intersection.len() > 1 {
                     let adjacent_same_colour_piece_count = |key: &(i8, i8)| {
                         let adjacent_filled_keys: Vec<_> = {
@@ -4829,8 +4842,6 @@ fn get_high_priority_plans(
                     };
                     
                    intersection.sort_by_key(|key| <usize>::max_value() - &adjacent_same_colour_piece_count(key));
-                    
-                println!("intersection post sort {:?}", intersection);
                 }
                 
                 if let Some(first) = intersection.first() {
