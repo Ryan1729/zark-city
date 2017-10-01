@@ -1649,8 +1649,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             //can only Draw or Hatch
                             *rng.choose(&vec![0, 7]).unwrap_or(&0)
                         } else {
-                            //Don't Fly, Build or Move randomly, and you can't Hatch anyways
-                            *rng.choose(&vec![0, 1, 2, 5]).unwrap_or(&0)
+                            //Don't Fly, Build, ConvertSlashDemolish, or Move randomly, and you can't Hatch anyways
+                            *rng.choose(&vec![0, 1, 2]).unwrap_or(&0)
                         };
                         if cfg!(debug_assertions) {
                             println!("randomly chose {:?}", x);
@@ -4503,7 +4503,7 @@ fn winners_contains(
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 enum Plan {
     FlySpecific((i8, i8), (i8, i8)),
     ConvertSlashDemolish((i8, i8), usize),
@@ -5056,7 +5056,8 @@ fn get_plan(
         !has_card_to_complete
     });
 
-    let other_winning_plans_exist = other_winning_plans.len() > 0;
+    let other_winning_plans_count = other_winning_plans.len();
+    let other_winning_plans_exist = other_winning_plans_count > 0;
 
     if cfg!(debug_assertions) {
         if other_winning_plans_exist {
@@ -5431,21 +5432,6 @@ fn get_plan(
                 .map(|_| 1)
                 .unwrap_or(0)
     };
-    let least_opponent_winning_moves = |plan: &Plan| {
-        let mut board_copy = board.clone();
-        let mut stashes_copy = stashes.clone();
-        let mut hand_copy = hand.clone();
-
-        apply_plan(
-            &mut board_copy,
-            &mut stashes_copy,
-            &mut hand_copy,
-            plan,
-            colour,
-        );
-
-        get_other_winning_plans(&board_copy, &stashes_copy, &hand_copy, colour).len()
-    };
 
     let mut plans = Vec::new();
 
@@ -5501,14 +5487,59 @@ fn get_plan(
         colour,
     ));
 
-    if plans.len() > 0 {
-        plans.push(Plan::DrawThree);
-    }
+    let opponent_winning_moves = |plan: &Plan| {
+        let mut board_copy = board.clone();
+        let mut stashes_copy = stashes.clone();
+        let mut hand_copy = hand.clone();
 
-    plans.sort_by_key(&most_winning_moves);
-    plans.sort_by_key(&least_opponent_winning_moves);
+        apply_plan(
+            &mut board_copy,
+            &mut stashes_copy,
+            &mut hand_copy,
+            plan,
+            colour,
+        );
 
-    if let Some(plan) = plans.first().cloned() {
+        get_other_winning_plans(&board_copy, &stashes_copy, &hand_copy, colour).len()
+    };
+
+    let select_plan = |plans : &mut Vec<Plan>| {
+        plans.sort_by_key(&most_winning_moves);
+        
+        plans.dedup();
+        
+        let result = {
+                let mut plans_and_move_count : Vec<_> = plans
+                .iter()
+                .filter_map(|plan| {
+                    let move_count = opponent_winning_moves(&plan);
+                    if move_count <= other_winning_plans_count {
+                        match plan {
+                            //~ Move(_)|MoveSpecific(source,_) => {
+                                //~ let flight_plan = power_block_completion_flight_plan();
+                                //~ if flight_plan.is_none() {
+                                    //~ Some(plan)
+                                //~ } else {
+                                    //~ None
+                                //~ }
+                            //~ }
+                            _ => Some(plan)
+                        }
+                    } else {
+                        None
+                    }
+                 })
+                .collect();
+                
+                plans_and_move_count.first().cloned()
+            };
+        
+        plans.clear();
+        
+        result
+    };
+    
+    if let Some(plan) = select_plan(&mut plans) {
         return Some(plan);
     }
 
@@ -5528,14 +5559,7 @@ fn get_plan(
         colour,
     ));
 
-    if plans.len() > 0 {
-        plans.push(Plan::DrawThree);
-    }
-
-    plans.sort_by_key(&most_winning_moves);
-    plans.sort_by_key(&least_opponent_winning_moves);
-
-    if let Some(plan) = plans.first().cloned() {
+    if let Some(plan) = select_plan(&mut plans) {
         return Some(plan);
     }
 
@@ -5560,7 +5584,7 @@ fn get_plan(
         colour,
     ));
 
-    if let Some(plan) = plans.first().cloned() {
+    if let Some(plan) = select_plan(&mut plans) {
         return Some(plan);
     }
 
@@ -5734,16 +5758,9 @@ fn get_plan(
             break;
         }
     }
-
-    if plans.len() > 0 {
-        plans.push(Plan::DrawThree);
-    }
-
-    plans.sort_by_key(&most_winning_moves);
-    plans.sort_by_key(&least_opponent_winning_moves);
-
-    if plans.len() > 0 {
-        return plans.first().cloned();
+    println!("plan selection = {:?}", plans);
+    if let Some(plan) = select_plan(&mut plans) {
+        return Some(plan);
     }
     if other_winning_plans_exist && !has_ace {
         return Some(Plan::DrawThree);
@@ -5817,7 +5834,6 @@ fn get_plan(
             }
         }
     }
-
 
     if plans.len() > 0 {
         plans.first().cloned()
@@ -8348,6 +8364,60 @@ mod plan_tests {
             
             match plan {
                 Some(Plan::FlySpecific((0, 0), (-1,0))) => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+        
+        fn dont_move_away_giving_two_step_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,1), Clubs, Nine);
+            
+            add_space(&mut board, (0,0), Spades, Nine);
+            
+            add_space(&mut board, (-1,0), Hearts, Two);
+            add_piece(&mut board, (-1,0), Green, Pips::One);
+            add_piece(&mut board, (-1,0), Green, Pips::One);
+            add_piece(&mut board, (-1,0), Red, Pips::One);
+            
+            add_space(&mut board, (1,1), Clubs, Two);
+            
+            add_space(&mut board, (2,0), Diamonds, Two);
+            add_piece(&mut board, (2,0), Green, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+            
+            match plan {
+                Some(Plan::Move(_)) => {
                     println!("plan was {:?}", plan);
                     false
                 },
