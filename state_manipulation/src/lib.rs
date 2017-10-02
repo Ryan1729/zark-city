@@ -1639,7 +1639,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                             Plan::Hatch(_) => 7,
                             Plan::FlySpecific(_, _) => 6,
                             Plan::ConvertSlashDemolish(_, _) => 5,
-                            Plan::Move(_) | Plan::MoveSpecific(_, _) => 4,
+                            Plan::MoveSpecific(_, _) => 4,
                             Plan::Build(_, _) => 3,
                             Plan::Spawn(_) => 2,
                             Plan::Grow(_, _) => 1,
@@ -1755,32 +1755,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                         4 => {
                             //Move
                             let chosen_piece = match possible_plan {
-                                Some(Plan::MoveSpecific(source, _)) => {
-                                    choose_piece(&state.board, &source, colour)
-                                }
-                                Some(Plan::Move(target)) => {
-                                    let adjacent_keys: Vec<_> = {
-                                        let mut adjacent_keys : Vec<_> = FOUR_WAY_OFFSETS
-                                        .iter()
-                                        .map(|&(x, y)| (x + target.0, y + target.1))
-                                        .collect();
-
-                                        rng.shuffle(&mut adjacent_keys);
-
-                                        adjacent_keys
-                                    };
-
-                                    let mut result = None;
-
-                                    for key in adjacent_keys.iter() {
-                                        let chosen_piece = choose_piece(&state.board, key, colour);
-                                        if chosen_piece.is_some() {
-                                            result = chosen_piece;
-                                            break;
-                                        }
-                                    }
-
-                                    result
+                                Some(Plan::MoveSpecific(selected_piece, _)) => {
+                                    Some(selected_piece)
                                 }
                                 _ => {
                                     let occupied_spaces: Vec<_> =
@@ -1807,7 +1783,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
                             if let Some((space_coords, piece_index)) = chosen_piece {
                                 let possible_target_space_coords = match possible_plan {
-                                    Some(Plan::Move(target)) |
                                     Some(Plan::MoveSpecific(_, target)) => Some(target),
 
                                     _ => {
@@ -2549,6 +2524,26 @@ fn hatch_if_possible(
     false
 }
 
+fn blocks_containing_key(board: &Board, key: &(i8,i8)) -> Vec<CombinedBlock> {
+    combined_power_blocks(board).iter().filter(|combined| combined.contains_key(key)).cloned().collect()
+}
+
+fn get_move_piece(board: &Board, target: &(i8,i8), colour: PieceColour) -> Option<((i8,i8), usize)> {
+    let mut adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
+        .iter()
+        .map(|&(x, y)| (x + target.0, y + target.1))
+        .collect();
+    
+    adjacent_keys.sort_by_key(|coord| blocks_containing_key(board, coord).len());
+    
+    for key in adjacent_keys.iter() {
+        if let Some((space_coords, piece_index)) = choose_piece(&board, key, colour) {
+            return Some((space_coords, piece_index))
+        }
+    }
+    None
+}
+
 fn apply_plan(
     board: &mut Board,
     stashes: &mut Stashes,
@@ -2570,24 +2565,8 @@ fn apply_plan(
         Plan::Build(target, card_index) => {
             build_if_available(board, hand, target, card_index, colour);
         }
-        Plan::MoveSpecific(source, target) => {
-            if let Some((space_coords, piece_index)) = choose_piece(&board, &source, colour) {
-                perform_move(board, space_coords, target, piece_index);
-            }
-        }
-        Plan::Move(target) => {
-            let adjacent_keys: Vec<_> = FOUR_WAY_OFFSETS
-                .iter()
-                .map(|&(x, y)| (x + target.0, y + target.1))
-                .collect();
-
-            for key in adjacent_keys.iter() {
-                if let Some((space_coords, piece_index)) = choose_piece(&board, key, colour) {
-                    perform_move(board, space_coords, target, piece_index);
-
-                    break;
-                }
-            }
+        Plan::MoveSpecific((space_coords, piece_index), target) => {
+            perform_move(board, space_coords, target, piece_index);
         }
         Plan::ConvertSlashDemolish(target, piece_index) => {
             if let Some(piece) = board
@@ -3763,6 +3742,15 @@ fn combined_power_blocks(board: &Board) -> Vec<CombinedBlock> {
         .collect()
 }
 
+impl CombinedBlock {
+    fn contains_key(&self, key: &(i8,i8)) -> bool {
+        match *self {
+            Completable(block) => block.keys.contains(key) || block.completion_key == *key,
+            Complete(block) => block_to_coords(block).contains(key),
+        }
+    }
+}
+
 fn block_to_coords(block: Block) -> [(i8, i8); 3] {
     match block {
         Horizontal(y, (x_minus_1, x, x_plus_1)) => [(x_minus_1, y), (x, y), (x_plus_1, y)],
@@ -4484,7 +4472,9 @@ fn get_winning_plan(
                 perform_move(&mut board_copy, *key, target, piece_index);
 
                 if winners_contains(get_winners(&board_copy, stashes), participant) {
-                    return Some(Plan::MoveSpecific(*key, target));
+                    if let Some(chosen_piece) = choose_piece(board, key, colour) {
+                        return Some(Plan::MoveSpecific(chosen_piece, target));
+                    }
                 }
             }
         }
@@ -4508,8 +4498,7 @@ enum Plan {
     FlySpecific((i8, i8), (i8, i8)),
     ConvertSlashDemolish((i8, i8), usize),
     Grow((i8, i8), usize),
-    Move((i8, i8)),
-    MoveSpecific((i8, i8), (i8, i8)),
+    MoveSpecific(((i8, i8), usize), (i8, i8)),
     Build((i8, i8), usize),
     Spawn((i8, i8)),
     Hatch((i8, i8)),
@@ -4845,7 +4834,9 @@ fn get_high_priority_plans(
                 }
                 
                 if let Some(first) = intersection.first() {
-                    plans.push(Plan::Move(**first));
+                    if let Some((source, piece_index)) = get_move_piece(board, first, colour) {
+                        plans.push(Plan::MoveSpecific((source, piece_index), **first));
+                    }
                 }
             }
             if let Some(source) = occupied_spaces.first().cloned() {
@@ -5106,14 +5097,10 @@ fn get_plan(
                             .append(&mut get_all_power_block_coords(&power_blocks, to));
                     }
                 }
-                Plan::Move(_from) => {
-                    //no point in disrupting where they were
-                    //TODO is this ever emitted as a winning plan?
-                }
                 Plan::Grow(_, _) | Plan::Spawn(_) | Plan::DrawThree => {
                     //It is impossible to directly win with these type of moves
                 }
-                Plan::MoveSpecific(_from, to) => {
+                Plan::MoveSpecific(_, to) => {
                     disruption_targets.append(&mut get_all_power_block_coords(&power_blocks, to));
                 }
                 Plan::Build(to, _) => {
@@ -5503,35 +5490,64 @@ fn get_plan(
         get_other_winning_plans(&board_copy, &stashes_copy, &hand_copy, colour).len()
     };
 
+    fn power_block_completion_flight_plan(board: &Board, source: & (i8,i8)) -> Option<Plan>{
+        let power_block_set = get_power_block_set(board);
+        
+        let mut board_copy = board.clone();
+        
+        if let Some(mut space) = board_copy.remove(source) {
+            for target in fly_from_targets(board, source) {
+                board_copy.insert(target, space);
+                
+                let current_power_block_set = get_power_block_set(&board_copy);
+                
+                if (&current_power_block_set - &power_block_set).len() > 0 {
+                    return Some(Plan::FlySpecific(*source, target));
+                }
+                
+                match board_copy.remove(&target) {
+                    Some(s) => { space = s; }
+                    None => { break; }
+                }
+            }
+        }
+        
+        None
+    }
+
     let select_plan = |plans : &mut Vec<Plan>| {
+        println!("initial {:?}", plans);
+        plans.dedup();
+        
         plans.sort_by_key(&most_winning_moves);
         
         plans.dedup();
         
-        let result = {
-                let mut plans_and_move_count : Vec<_> = plans
+        let result : Option<Plan> = {
+            println!("pre filter {:?}", plans);
+            let filtered_plans : Vec<_> = plans
                 .iter()
-                .filter_map(|plan| {
-                    let move_count = opponent_winning_moves(&plan);
-                    if move_count <= other_winning_plans_count {
-                        match plan {
-                            //~ Move(_)|MoveSpecific(source,_) => {
-                                //~ let flight_plan = power_block_completion_flight_plan();
-                                //~ if flight_plan.is_none() {
-                                    //~ Some(plan)
-                                //~ } else {
-                                    //~ None
-                                //~ }
-                            //~ }
-                            _ => Some(plan)
+                .filter(|plan| {
+                    let move_count = opponent_winning_moves(plan);
+                    if move_count < other_winning_plans_count {
+                        true
+                    } else if move_count == other_winning_plans_count {
+                        match **plan {
+                            Plan::MoveSpecific((source, _), _) => {
+                                let flight_plan = power_block_completion_flight_plan(board, &source);
+                                println!("check flight plan {:?}", plan);
+                                flight_plan.is_none() 
+                            }
+                            _ => true
                         }
                     } else {
-                        None
+                        println!("makes winning move {:?}", plan);
+                        false
                     }
                  })
                 .collect();
-                
-                plans_and_move_count.first().cloned()
+                println!("post filter {:?}", filtered_plans);
+                filtered_plans.first().cloned().cloned()
             };
         
         plans.clear();
@@ -5614,7 +5630,9 @@ fn get_plan(
         for adjacent in adjacent_filled_keys.iter() {
             for &(x, y) in FOUR_WAY_OFFSETS.iter() {
                 if is_occupied_by(board, &(x + adjacent.0, y + adjacent.1), colour) {
-                    plans.push(Plan::Move(*adjacent));
+                    if let Some((source, piece_index)) = get_move_piece(board, adjacent, colour) {
+                        plans.push(Plan::MoveSpecific((source, piece_index), *adjacent));
+                    }
                 }
             }
         }
@@ -5998,7 +6016,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Move((0,0))) = plan {
+            if let Some(Plan::MoveSpecific(_, (0,0))) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -6106,7 +6124,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Move((0,0))) = plan {
+            if let Some(Plan::MoveSpecific(_, (0,0))) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -6223,7 +6241,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Move((-1,0))) = plan {
+            if let Some(Plan::MoveSpecific(_, (-1,0))) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -6322,7 +6340,7 @@ mod plan_tests {
 
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
-            if let Some(Plan::Move((0,0))) = plan {
+            if let Some(Plan::MoveSpecific(_, (0,0))) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -6609,7 +6627,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
 
             match plan {
-                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                Some(Plan::MoveSpecific(((0,0), _), (0,-1))) => {
                     true
                 },
                 _ => {
@@ -6655,7 +6673,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
 
             match plan {
-                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                Some(Plan::MoveSpecific(((0,0), _), (0,-1))) => {
                     true
                 },
                 _ => {
@@ -6775,7 +6793,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Green);
 
             match plan {
-                Some(Plan::Move((0,-1)))|Some(Plan::MoveSpecific((0,0), (0,-1))) => {
+                Some(Plan::MoveSpecific(((0,0), _), (0,-1))) => {
                     true
                 },
                 _ => {
@@ -6882,8 +6900,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((1,-1)))
-                | Some(Plan::MoveSpecific((2,-1),(1,-1)))
+                 Some(Plan::MoveSpecific(((2,-1), _),(1,-1)))
                 | Some(Plan::ConvertSlashDemolish((1,-1), _)) => {
                     true
                 },
@@ -7005,7 +7022,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((0,0)))|Some(Plan::MoveSpecific(_, (0,0))) => {
+                Some(Plan::MoveSpecific(((0,1), 0), (0,0))) => {
                     true
                 },
                 _ => {
@@ -7114,7 +7131,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move(_)) => {
+                Some(Plan::MoveSpecific(_, _)) => {
                     println!("plan was {:?}", plan);
                     false
                 },
@@ -7162,7 +7179,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move(_))|Some(Plan::MoveSpecific(_, _)) => {
+                Some(Plan::MoveSpecific(_, _)) => {
                     println!("plan was {:?}", plan);
                     false
                 },
@@ -7638,7 +7655,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((-1, 0)))|Some(Plan::Move((0, -1))) => {
+                Some(Plan::MoveSpecific(_, (-1, 0)))|Some(Plan::MoveSpecific(_, (0, -1))) => {
                     println!("plan was {:?}", plan);
                     false
                 },
@@ -7892,7 +7909,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((-1,0)))|Some(Plan::Move((1,0)))|Some(Plan::Move((0,-1))) => {
+                Some(Plan::MoveSpecific(_, (-1,0)))|Some(Plan::MoveSpecific(_, (1,0)))|Some(Plan::MoveSpecific(_, (0,-1))) => {
                     true
                 },
                 _ => {
@@ -7967,7 +7984,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((0,-1))) => {
+                Some(Plan::MoveSpecific(_, (0,-1))) => {
                     true
                 },
                 _ => {
@@ -8038,7 +8055,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Black);
 
             match plan {
-                Some(Plan::Move((-1,-1))) => {
+                Some(Plan::MoveSpecific(_, (-1,-1))) => {
                     true
                 },
                 _ => {
@@ -8093,7 +8110,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((-1,-1))) => {
+                Some(Plan::MoveSpecific(_, (-1,-1))) => {
                     true
                 },
                 _ => {
@@ -8314,7 +8331,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             match plan {
-                Some(Plan::Move((0, -3))) => {
+                Some(Plan::MoveSpecific(_, (0, -3))) => {
                     println!("plan was {:?}", plan);
                     false
                 },
@@ -8417,7 +8434,7 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
             
             match plan {
-                Some(Plan::Move(_)) => {
+                Some(Plan::MoveSpecific(_, _)) => {
                     println!("plan was {:?}", plan);
                     false
                 },
