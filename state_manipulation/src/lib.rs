@@ -4579,7 +4579,9 @@ fn get_fly_specific(
         let possible_targets = fly_from_targets(board, source_coord);
         for target_coord in adjacent_empty_spaces.iter() {
             if possible_targets.contains(target_coord) {
-                if flight_does_not_create_non_private_block(
+                //Note: flight_does_not_create_non_private_power_block
+                //not   flight_does_not_create_non_private_block
+                if flight_does_not_create_non_private_power_block(
                     &board,
                     *source_coord,
                     **target_coord,
@@ -4686,7 +4688,7 @@ fn get_high_priority_plans(
 ) -> Vec<Plan> {
     let mut plans = Vec::new();
     let has_ace = hand.iter().filter(|c| c.value == Ace).count() > 0;
-
+    
     for &target in disruption_targets.iter() {
         if let Some(space) = board.get(&target) {
             //It's contested enough if it won't be taken for at least one round.
@@ -4700,7 +4702,7 @@ fn get_high_priority_plans(
 
             if contested_enough {
                 if cfg!(debug_assertions) {
-                    println!("contested_enough");
+                    println!("{:?} is contested_enough", target);
                 }
                 continue;
             }
@@ -5516,7 +5518,6 @@ fn get_plan(
     }
 
     let select_plan = |plans : &mut Vec<Plan>| {
-        println!("initial {:?}", plans);
         plans.dedup();
         
         plans.sort_by_key(&most_winning_moves);
@@ -5524,7 +5525,6 @@ fn get_plan(
         plans.dedup();
         
         let result : Option<Plan> = {
-            println!("pre filter {:?}", plans);
             let filtered_plans : Vec<_> = plans
                 .iter()
                 .filter(|plan| {
@@ -5535,18 +5535,16 @@ fn get_plan(
                         match **plan {
                             Plan::MoveSpecific((source, _), _) => {
                                 let flight_plan = power_block_completion_flight_plan(board, &source);
-                                println!("check flight plan {:?}", plan);
                                 flight_plan.is_none() 
                             }
                             _ => true
                         }
                     } else {
-                        println!("makes winning move {:?}", plan);
                         false
                     }
                  })
                 .collect();
-                println!("post filter {:?}", filtered_plans);
+                
                 filtered_plans.first().cloned().cloned()
             };
         
@@ -5702,7 +5700,15 @@ fn get_plan(
     }
 
     if has_ace {
-        for &target in unoccupied_disruption_targets.iter() {
+        let all_unoccupied_disruption_targets: Vec<_> = unoccupied_disruption_targets
+            .iter()
+            .chain(unoccupied_completable_disruption_targets.iter())
+            .chain(other_colour_concentrations.iter())
+            .filter(|key| !occupied_spaces.contains(key))
+            .cloned()
+            .collect();
+        
+        for &target in all_unoccupied_disruption_targets.iter() {
             //Try to fly next to the target
 
             let adjacent_keys: Vec<_> = {
@@ -5738,6 +5744,7 @@ fn get_plan(
         let all_occupied_disruption_targets: Vec<_> = occupied_disruption_targets
             .iter()
             .chain(occupied_completable_disruption_targets.iter())
+            .chain(other_colour_concentrations.iter())
             .filter(|key| occupied_spaces.contains(key))
             .cloned()
             .collect();
@@ -5776,7 +5783,7 @@ fn get_plan(
             break;
         }
     }
-    println!("plan selection = {:?}", plans);
+    
     if let Some(plan) = select_plan(&mut plans) {
         return Some(plan);
     }
@@ -8440,6 +8447,73 @@ mod plan_tests {
                 },
                 _ => {
                     true
+                }
+            }
+        }
+        
+        fn fly_towards_two_step_win(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Spades, Nine);
+            add_piece(&mut board, (0,0), Green, Pips::Two);
+
+            add_space(&mut board, (0,-1), Spades, Seven);
+
+            add_space(&mut board, (-1,-1), Spades, Eight);
+            add_piece(&mut board, (-1,-1), Red, Pips::One);
+            add_piece(&mut board, (-1,-1), Red, Pips::One);
+            add_piece(&mut board, (-1,-1), Black, Pips::One);
+            add_piece(&mut board, (-1,-1), Black, Pips::One);
+
+            //should be disrupted
+            add_space(&mut board, (2,1), Clubs, Ten);
+            add_piece(&mut board, (2,1), Green, Pips::One);
+
+            add_space(&mut board, (1,1), Diamonds, Ten);
+            add_piece(&mut board, (1,1), Green, Pips::One);
+            add_piece(&mut board, (1,1), Green, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: TwoLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: OneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![Card { suit: Clubs, value: Ace }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Black);
+
+            match plan {
+                Some(Plan::FlySpecific((-1,-1), (0,1)))|Some(Plan::FlySpecific((-1,-1), (1,0)))
+                |Some(Plan::FlySpecific((-1,-1), (2,0)))|Some(Plan::FlySpecific((-1,-1), (1,2)))
+                |Some(Plan::FlySpecific((-1,-1), (2,2)))|Some(Plan::FlySpecific((-1,-1), (3,1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
                 }
             }
         }
