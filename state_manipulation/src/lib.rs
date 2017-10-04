@@ -5535,7 +5535,10 @@ fn get_plan(
                         match **plan {
                             Plan::MoveSpecific((source, _), _) => {
                                 let flight_plan = power_block_completion_flight_plan(board, &source);
-                                flight_plan.is_none() 
+                                move_count > 0 || flight_plan.is_none() 
+                            }
+                            Plan::FlySpecific(source, _) => {
+                                move_count == 0 || all_priority_targets.contains(&source)
                             }
                             _ => true
                         }
@@ -6031,60 +6034,6 @@ mod plan_tests {
             }
         }
 
-        fn fly_towards(seed: usize) -> bool {
-            let seed_slice: &[_] = &[seed];
-            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
-
-            let mut board = green_vertical_power_block_board();
-
-            {
-                let mut pieces: SpacePieces = Default::default();
-                pieces.insert(0, Piece {
-                    colour: Red,
-                    pips: Pips::One,
-                });
-
-                board.insert((-1,2), Space {
-                    card: Card {
-                        suit: Hearts,
-                        value: Ten,
-                    },
-                        pieces,
-                        offset: 0,
-                });
-            }
-
-            let player_stash = Stash {
-                colour: Green,
-                one_pip: NoneLeft,
-                two_pip: ThreeLeft,
-                three_pip: ThreeLeft,
-            };
-
-            let red_stash = Stash {
-                colour: Red,
-                one_pip: TwoLeft,
-                two_pip: ThreeLeft,
-                three_pip: ThreeLeft,
-            };
-
-            let stashes = Stashes {
-                player_stash,
-                cpu_stashes: vec![red_stash],
-            };
-
-            let hand = vec![Card {value: Ace, suit:Spades}];
-
-            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
-
-            if let Some(Plan::FlySpecific((-1,2),_)) = plan {
-                true
-            } else {
-                println!("plan was {:?}", plan);
-                false
-            }
-        }
-
         fn move_in_and_hope_with_number_card_in_hand(seed: usize) -> bool {
             let seed_slice: &[_] = &[seed];
             let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
@@ -6132,60 +6081,6 @@ mod plan_tests {
             let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
 
             if let Some(Plan::MoveSpecific(_, (0,0))) = plan {
-                true
-            } else {
-                println!("plan was {:?}", plan);
-                false
-            }
-        }
-
-        fn fly_towards_with_number_card_in_hand(seed: usize) -> bool {
-            let seed_slice: &[_] = &[seed];
-            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
-
-            let mut board = green_vertical_power_block_board();
-
-            {
-                let mut pieces: SpacePieces = Default::default();
-                pieces.insert(0, Piece {
-                    colour: Red,
-                    pips: Pips::One,
-                });
-
-                board.insert((-1,2), Space {
-                    card: Card {
-                        suit: Hearts,
-                        value: Ten,
-                    },
-                        pieces,
-                        offset: 0,
-                });
-            }
-
-            let player_stash = Stash {
-                colour: Green,
-                one_pip: NoneLeft,
-                two_pip: ThreeLeft,
-                three_pip: ThreeLeft,
-            };
-
-            let red_stash = Stash {
-                colour: Red,
-                one_pip: TwoLeft,
-                two_pip: ThreeLeft,
-                three_pip: ThreeLeft,
-            };
-
-            let stashes = Stashes {
-                player_stash,
-                cpu_stashes: vec![red_stash],
-            };
-
-            let hand = vec![Card {value: Ace, suit:Spades}, Card{suit: Diamonds, value:Four}];
-
-            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
-
-            if let Some(Plan::FlySpecific((-1,2),_)) = plan {
                 true
             } else {
                 println!("plan was {:?}", plan);
@@ -8509,6 +8404,79 @@ mod plan_tests {
                 Some(Plan::FlySpecific((-1,-1), (0,1)))|Some(Plan::FlySpecific((-1,-1), (1,0)))
                 |Some(Plan::FlySpecific((-1,-1), (2,0)))|Some(Plan::FlySpecific((-1,-1), (1,2)))
                 |Some(Plan::FlySpecific((-1,-1), (2,2)))|Some(Plan::FlySpecific((-1,-1), (3,1))) => {
+                    true
+                },
+                _ => {
+                    println!("plan was {:?}", plan);
+                    false
+                }
+            }
+        }
+        
+        fn move_in_and_hope_with_a_distraction(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,0), Spades, Nine);
+
+            add_space(&mut board, (0,-1), Spades, Seven);
+
+            add_space(&mut board, (-1,-1), Spades, Six);
+            add_piece(&mut board, (-1,-1), Black, Pips::Two);
+            add_piece(&mut board, (-1,-1), Black, Pips::One);
+
+            add_space(&mut board, (0,1), Hearts, Seven);
+            
+            add_space(&mut board, (0,2), Spades, Eight);
+            add_piece(&mut board, (0,2), Black, Pips::One);
+            add_piece(&mut board, (0,2), Black, Pips::One);
+            add_piece(&mut board, (0,2), Red, Pips::One);
+
+            //should be disrupted
+            add_space(&mut board, (1,2), Diamonds, Two);
+            
+            add_space(&mut board, (1,0), Clubs, Two);
+            add_piece(&mut board, (1,0), Green, Pips::One);
+
+            add_space(&mut board, (1,1), Hearts, Two);
+            add_piece(&mut board, (1,1), Green, Pips::One);
+            add_piece(&mut board, (1,1), Green, Pips::One);
+            
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: NoneLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let black_stash = Stash {
+                colour: Black,
+                one_pip: NoneLeft,
+                two_pip: TwoLeft,
+                three_pip: ThreeLeft,
+            };
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash, black_stash],
+            };
+
+            let hand = vec![Card { suit: Clubs, value: Ace }, Card { suit: Clubs, value: Five }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Black);
+
+            match plan {
+                Some(Plan::MoveSpecific(((0,2), 0), (1,2)))
+                |Some(Plan::MoveSpecific(((0,2), 1), (1,2)))=> {
                     true
                 },
                 _ => {
