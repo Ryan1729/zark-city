@@ -5839,6 +5839,8 @@ fn get_plan(
         //the cpu's choices should be a function of the rng
         number_cards.sort();
 
+        let other_colour_block_count = combined_power_blocks(&board).iter().count() - current_only_us_block_count;
+
         for target in build_targets.iter() {
             for card_index in number_cards.iter() {
                 let plan = Plan::Build(*target, *card_index);
@@ -5853,10 +5855,15 @@ fn get_plan(
                     &plan,
                     colour,
                 );
-
+                
+                let new_only_us_block_count = get_this_colour_only_block_count(&board_copy, colour);
+                
                 if get_this_colour_only_block_count(&board_copy, colour)
                     > current_only_us_block_count
+                    && new_only_us_block_count
+                    <= other_colour_block_count
                 {
+                    println!("C now {:?}, was {:?}", get_this_colour_only_block_count(&board_copy, colour), current_only_us_block_count);
                     plans.push(plan);
                 }
             }
@@ -8485,6 +8492,59 @@ mod plan_tests {
                 }
             }
         }
+        
+        fn do_not_complete_a_block_for_another_player(seed: usize) -> bool {
+            let seed_slice: &[_] = &[seed];
+            let mut rng: StdRng = SeedableRng::from_seed(seed_slice);
+
+            let mut board = HashMap::new();
+
+            add_space(&mut board, (0,-1), Spades, Seven);
+
+            add_space(&mut board, (-1,-1), Spades, Eight);
+            add_piece(&mut board, (-1,-1), Green, Pips::Two);
+            add_piece(&mut board, (-1,-1), Green, Pips::One);
+
+            add_space(&mut board, (1,-1), Hearts, Seven);
+            
+            add_space(&mut board, (1,0), Diamonds, Two);
+            add_piece(&mut board, (1,0), Red, Pips::One);
+
+            let player_stash = Stash {
+                colour: Green,
+                one_pip: TwoLeft,
+                two_pip: TwoLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let red_stash = Stash {
+                colour: Red,
+                one_pip: TwoLeft,
+                two_pip: ThreeLeft,
+                three_pip: ThreeLeft,
+            };
+
+            let stashes = Stashes {
+                player_stash,
+                cpu_stashes: vec![red_stash],
+            };
+
+            let hand = vec![Card { suit: Spades, value: Nine }, Card { suit: Clubs, value: Four }];
+
+            let plan = get_plan(&board, &stashes, &hand, &mut rng, Red);
+
+            match plan {
+                Some(Plan::Build((0,0), 0))
+                => {
+                    println!("plan was {:?}", plan);
+                    false
+                },
+                _ => {
+                    true
+                }
+            }
+        }
+        
     }
 
 
