@@ -142,6 +142,7 @@ fn make_state(mut rng: StdRng) -> State {
         hud_alpha: 1.0,
         highlighted: PlayerOccupation,
         message: Default::default(),
+        help_screen: true,
     };
 
     state
@@ -179,6 +180,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 _ => println!("{:?}", *event),
             }
         }
+        
+        match *event {
+                Event::MouseMove(_)|Event::KeyDown(Keycode::Question) => {}
+                _ => state.help_screen = false,
+            }
 
         match *event {
             Event::Quit | Event::KeyDown(Keycode::F10) => {
@@ -248,12 +254,41 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::RightMouseUp => {
                 //right_mouse_released = true;
             }
+            Event::KeyDown(Keycode::Question)|Event::KeyDown(Keycode::Slash) => {
+                state.help_screen = true;
+            }
             Event::WindowSize((w, h)) => {
                 state.window_wh = (w as f32, h as f32);
                 println!("{}", state.window_wh.0 / state.window_wh.1);
             }
             _ => {}
         }
+    }
+
+    if state.help_screen {
+        let help_lines = [
+            "Zark City",
+            "Press ? to show this message.",
+            "Press any other key to close it.",
+            "use the arrow keys to move the board around.",
+            "use W and S to zoom in and out.",
+            "Use the mouse for everything else.",
+        ];
+        
+        let mut vertical_offset = 0.0;
+        for line in help_lines.into_iter() {
+            (p.draw_text)(
+                line,
+                (0.0, 0.750 - vertical_offset),
+                1.0,
+                36.0,
+                [1.0, 1.0, 1.0, 1.0],
+                0
+            );
+            
+            vertical_offset += 0.125; 
+        }
+        
     }
 
     if mouse_released != mouse_pressed {

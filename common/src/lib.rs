@@ -61,6 +61,7 @@ pub struct State {
     pub hud_alpha: f32,
     pub highlighted: Highlighted,
     pub message: Message,
+    pub help_screen: bool,
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
